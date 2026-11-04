@@ -114,12 +114,13 @@ function Boton() {
   const worst = rows.map((r) => level(r.pct, r.c)).find((l) => l === 'over') ?? rows.map((r) => level(r.pct, r.c)).find((l) => l === 'near')
   return (
     <>
-      <FootButton onClick={() => setOpen(true)} aria-haspopup="dialog" aria-expanded={open}>
+      {/* en el teléfono, solo el ícono: el pie del cajón no tiene ancho para tres palabras */}
+      <FootButton onClick={() => setOpen(true)} aria-label="Entorno" aria-haspopup="dialog" aria-expanded={open} className="relative">
         <svg viewBox="0 0 16 16" className="size-4 shrink-0 text-fg3 coarse:text-fg2 phone:size-5 phone:text-fg2" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
           <path d="M3 13V9M8 13V3M13 13V6" />
         </svg>
-        Entorno
-        {worst ? <span className={clsx('size-2 rounded-full', FILL[worst as Level])} /> : null}
+        <span className="phone:hidden">Entorno</span>
+        {worst ? <span className={clsx('size-2 rounded-full phone:absolute phone:top-2.5 phone:right-2', FILL[worst as Level])} /> : null}
       </FootButton>
       {open ? <Panel foto={foto} onClose={() => setOpen(false)} /> : null}
     </>
