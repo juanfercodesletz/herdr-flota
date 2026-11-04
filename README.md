@@ -30,14 +30,30 @@ no tiene ArtifactData y no hay API pública). Por eso el TPM es el puente: en ca
 
 ## Plan, paso a paso
 
-0. Repo y plan. ← aquí
-1. Base decidida: Shepherdr (github.com/eliasstravik/shepherdr) + add-ons propios. Instalar y probar.
+0. Repo y plan. ✓
+1. Shepherdr instalado como base. ✓
 2. La flota corre en herdr-core (`hc`), con etiquetas `flota.producto`, `flota.rol`,
    `flota.padre`, `flota.tarea` en cada terminal.
 3. Árbol de productos.
-4. Entorno.
+4. Entorno. ✓ (primero, por ser independiente del resto)
 5. Iniciativas, desde el archivo que escribe el TPM.
 6. Decisiones, con el puente del TPM.
 7. Tablero y Gantt.
 
 Cada paso se prueba en la app antes de seguir (`herdr-app check`, `herdr-app shot`).
+
+## Instalar
+
+1. Instala Shepherdr (`./install.sh` en su repo) y corre `shepherdr doctor`.
+2. En este repo: `./install.sh`. Enlaza los mods y genera el layout `flota` desde el de Shepherdr.
+   Vuelve a correrlo después de cada `shepherdr update`.
+3. Para que Entorno vea el cupo de Claude Code, agrega esta línea a tu script de barra de estado,
+   después de leer `rate_limits` (cambia `ccp` por el nombre del perfil):
+
+   ```sh
+   [ -n "$rl_5h$rl_7d" ] && { c="$HOME/.herdr/flota/cupos"; mkdir -p "$c"; echo "$input" | jq -c '{at: (now|floor), rate_limits}' > "$c/ccp.json.$$" && mv "$c/ccp.json.$$" "$c/ccp.json"; }
+   ```
+
+   Codex no necesita nada: Entorno lee su cupo del último log en `~/.codex/sessions`.
+4. Los techos se cambian en `~/.herdr/flota/presupuesto.json`, por ejemplo
+   `{"ccw": 90, "ccp": 90, "codex": 100, "cpu": 85, "ram": 90, "disco_min_gb": 150, "sesiones": 100}`.
