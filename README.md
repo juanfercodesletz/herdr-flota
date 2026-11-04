@@ -31,7 +31,7 @@ no tiene ArtifactData y no hay API pública). Por eso el TPM es el puente: en ca
 ## Plan, paso a paso
 
 0. Repo y plan. ← aquí
-1. Decidir la base: Shepherdr (github.com/eliasstravik/shepherdr) con add-ons propios, o layout propio.
+1. Base decidida: Shepherdr (github.com/eliasstravik/shepherdr) + add-ons propios. Instalar y probar.
 2. La flota corre en herdr-core (`hc`), con etiquetas `flota.producto`, `flota.rol`,
    `flota.padre`, `flota.tarea` en cada terminal.
 3. Árbol de productos.
