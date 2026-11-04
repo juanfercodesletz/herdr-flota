@@ -73,7 +73,7 @@ export default class Entorno extends View {
       .child(div().h(3).rounded(2).w(`${clamp(n)}%`).bg(tone(n, c)))
       .when(c < 100, (el) => el.child(div().absolute().top(-2).left(`${c}%`).w(1).h(7).bg(t.foreground).opacity(0.5)));
     const lbl = (s) => div().text_size(10.5).text_color(t.dim).child(s.toUpperCase());
-    const head2 = (left, right) => h_flex().child(div().flex_1().child(lbl(left))).child(div().w(70).flex().justify_end().child(lbl(right)));
+    const head2 = (left, right) => h_flex().child(div().flex_1().child(lbl(left))).child(div().w(90).flex().justify_end().child(lbl(right)));
 
     // Una sola forma de fila para todo el panel: nombre, valor, dato gris a la derecha, barra
     // a todo el ancho y, si hace falta, una nota chica debajo.
@@ -81,15 +81,18 @@ export default class Entorno extends View {
       .child(h_flex().items_baseline()
         .child(div().flex_1().text_size(12.5).text_color(t.foreground).child(k))
         .child(div().text_size(12).text_color(tone(pct, c)).child(val))
-        .child(div().w(70).flex().justify_end().text_size(11).text_color(t.dim).child(right)))
+        .child(div().w(90).flex().justify_end().text_size(11).text_color(t.dim).child(right)))
       .child(bar(pct ?? 0, c))
       .when(Boolean(note), (el) => el.child(div().text_size(10.5).text_color(t.dim).child(note)));
 
     // Cupo: la ventana semanal manda (es la del techo para lanzar); la de 5h va de nota.
     const seatRow = (k) => {
-      const s = this.seats[k], c = cap[k], w = s?.["7d"], h = s?.["5h"];
+      const s = this.seats[k], c = cap[k], now = Date.now() / 1000;
+      const live = (x) => (x && (!x.reset || x.reset > now) ? x : null);
+      const w = live(s?.["7d"]), h = live(s?.["5h"]);
       const notes = [];
       if (h) notes.push(`5 h: ${Math.round(h.pct)}% · reinicia ${resetAt(h.reset)}`);
+      if (s?.["7d"] && !w) notes.push("ya reinició; falta un dato nuevo");
       if (!s?.at) notes.push("sin datos");
       else if (Date.now() / 1000 - s.at > 1800) notes.push(`dato de ${ago(s.at)}`);
       return row(k, w?.pct, c, w ? `${Math.round(w.pct)}%` : "—", w ? resetAt(w.reset) : "", notes.join(" · "));
@@ -142,13 +145,14 @@ function ago(at) {
   return `hace ${Math.round(s / 86400)} d`;
 }
 
-// Reset: la hora si es en menos de 24 h, si no el día y la hora.
+// Reset: "hoy 16:20", "mañana 11:11" o "sáb 23:00".
 const DIAS = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
 function resetAt(at) {
   if (!at) return "";
-  const d = new Date(at * 1000);
+  const d = new Date(at * 1000), now = new Date();
   const hm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-  return at - Date.now() / 1000 < 86400 ? hm : `${DIAS[d.getDay()]} ${hm}`;
+  const days = Math.round((new Date(d).setHours(0, 0, 0, 0) - new Date(now).setHours(0, 0, 0, 0)) / 86400000);
+  return `${days === 0 ? "hoy" : days === 1 ? "mañana" : DIAS[d.getDay()]} ${hm}`;
 }
 
 // Disco: 100% de la barra = llegar al mínimo libre. Se pinta lo consumido del margen.
