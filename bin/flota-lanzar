@@ -1,0 +1,102 @@
+#!/bin/zsh -f
+# herdr-flota: abre un asiento de la flota en herdr-core (hc) con sus etiquetas y su perfil, pasa
+# las compuertas de primer arranque y le manda el encargo cuando ya puede recibirlo.
+#
+#   flota-lanzar --asiento ccp|ccw|codex --producto <p> --rol <r> [--tarea <id>] [--padre <t|nombre>]
+#                [--nombre <n>] [--cwd <carpeta>] [--modelo <m>] [--esfuerzo <e>]
+#                [--encargo <texto> | --encargo-archivo <ruta>]
+#
+# Imprime la dirección del terminal (t7). Solo usa `hc`, nunca la Herdr de terminal.
+# Las trampas de cada asiento están medidas en la skill asientos-de-flota.
+setopt pipefail
+die() { print -u2 -- "flota-lanzar: $*"; exit 1 }
+aviso() { print -u2 -- "  $*" }
+
+zparseopts -D -F -- -asiento:=o_a -producto:=o_p -rol:=o_r -tarea:=o_t -padre:=o_pa -nombre:=o_n \
+  -cwd:=o_c -modelo:=o_m -esfuerzo:=o_e -encargo:=o_enc -encargo-archivo:=o_arc -help=o_h || exit 2
+[[ -n $o_h ]] && { sed -n '5,7p' $0; exit 0 }
+asiento=$o_a[-1] producto=$o_p[-1] rol=$o_r[-1] tarea=$o_t[-1] padre=${o_pa[-1]:-$HC_TERMINAL_ID}
+cwd=${o_c[-1]:-$PWD} esfuerzo=${o_e[-1]:-high} encargo=$o_enc[-1] archivo=$o_arc[-1]
+[[ -n $asiento && -n $producto && -n $rol ]] || die "faltan --asiento, --producto o --rol (--help)"
+[[ -d $cwd ]] || die "no existe la carpeta $cwd"
+[[ -n $encargo && -n $archivo ]] && die "--encargo o --encargo-archivo, no los dos"
+[[ -z $archivo || -f $archivo ]] || die "no existe el encargo $archivo"
+
+case $asiento in
+  ccp|ccw)
+    modelo=${o_m[-1]:-opus}
+    # Sin CLAUDE_CONFIG_DIR explícito, claude arranca pero ignora los prompts sin avisar.
+    [[ $asiento == ccp ]] && cfg=$HOME/.claude || cfg=$HOME/.claude-work
+    cmd=(env CLAUDE_CONFIG_DIR=$cfg claude --model $modelo --effort $esfuerzo --dangerously-skip-permissions) ;;
+  codex)
+    modelo=${o_m[-1]:-gpt-6.1-sol}
+    # Un nombre que Codex no conoce solo avisa «metadata not found» y luego falla: se para aquí.
+    cache=${CODEX_HOME:-$HOME/.codex}/models_cache.json
+    if [[ -f $cache ]]; then
+      niveles=$(jq -r --arg m $modelo '.models[] | select(.slug == $m) | [.supported_reasoning_levels[]?.effort] | join(" ")' $cache)
+      [[ -n $niveles ]] || die "Codex no tiene el modelo '$modelo'. Hay: $(jq -r '[.models[].slug] | join(", ")' $cache)"
+      [[ " $niveles " == *" $esfuerzo "* ]] || die "$modelo no acepta el esfuerzo '$esfuerzo' (acepta: $niveles)"
+    fi
+    # --no-daemon: sin él, los comandos de Codex corren fuera de hc. El esfuerzo va siempre: el default es none.
+    cmd=(codex --no-daemon -m $modelo -c model_reasoning_effort=$esfuerzo --sandbox workspace-write --ask-for-approval never) ;;
+  *) die "asiento desconocido '$asiento' (ccp, ccw o codex)" ;;
+esac
+
+# Nombre corto, que se lea en la lista del teléfono: <rol>-<tarea>, a-z 0-9 y guiones, 24 como mucho.
+nombre=${o_n[-1]:-$rol${tarea:+-$tarea}}
+nombre=${${(L)nombre}//[^a-z0-9_-]/-}; nombre=${nombre[1,24]}
+while [[ $nombre == *- ]] nombre=${nombre%-}
+
+etiquetas=(--label flota.producto=$producto --label flota.rol=$rol --label flota.asiento=$asiento)
+[[ -n $padre ]] && etiquetas+=(--label flota.padre=$padre)
+[[ -n $tarea ]] && etiquetas+=(--label flota.tarea=$tarea)
+# Si el padre es un terminal vivo, hc le avisa cuando el hijo se bloquea o termina.
+par=(); [[ -n $padre ]] && hc get $padre >/dev/null 2>&1 && par=(--parent $padre)
+
+t=$(hc run --bg --json --outlive-parent --name $nombre --cwd $cwd $par $etiquetas -- $cmd | jq -r '.address // empty')
+[[ -n $t ]] || die "hc no abrió el terminal $nombre"
+aviso "$t $nombre: $asiento $modelo $esfuerzo en $cwd"
+
+# Esperar el arranque: pasar las compuertas que se vean y salir cuando el agente está libre.
+fin=$(( SECONDS + ${FLOTA_ARRANQUE_S:-120} ))
+listo=0
+while (( SECONDS < fin )); do
+  pantalla=$(hc read $t 2>/dev/null)
+  tecla=()
+  case $pantalla in
+    *"Yes, I trust this folder"*) tecla=(down enter); aviso "confianza de carpeta: aceptada" ;;  # Claude: «No, exit» viene marcada
+    *"Yes, I accept"*) tecla=(down enter); aviso "modo sin permisos: aceptado" ;;               # Claude, primera vez por perfil
+    *"trust the contents of this directory"*) tecla=(enter); aviso "confianza de carpeta: aceptada" ;;  # Codex: la 1 viene marcada
+    *"Hooks need review"*) tecla=(esc)  # Codex: los hooks nuevos los aprueba Juan, no el lanzador
+      aviso "Codex tiene hooks nuevos sin revisar: sigue sin ellos. Abre codex una vez y apruébalos con t." ;;
+  esac
+  if (( $#tecla )); then
+    hc keys $t $tecla >/dev/null
+    sleep 1  # ponytail: que la pantalla se redibuje antes de leerla otra vez, para no pulsar dos veces
+    continue
+  fi
+  estado=$(hc get $t --json | jq -r '.state + " " + (.status.state // "")')
+  [[ $estado == "live idle" || $estado == "live done" ]] && { listo=1; break }
+  [[ $estado == finished* ]] && { print -u2 -- "$pantalla"; die "$t terminó al arrancar" }
+  hc wait $t --timeout 2 >/dev/null 2>&1  # despierta antes si cambia su estado
+done
+(( listo )) || { print -u2 -- "$pantalla"; die "$t no quedó listo en ${FLOTA_ARRANQUE_S:-120} s (sigue vivo: hc attach $t)" }
+
+# El encargo va como puntero a un archivo: un texto largo pegado puede quedar sin enviar.
+if [[ -n $encargo ]]; then
+  d=${FLOTA_ENCARGOS:-$HOME/.herdr/flota/encargos}; mkdir -p $d
+  archivo=$d/$nombre.md
+  print -r -- "$encargo" > $archivo
+fi
+if [[ -n $archivo ]]; then
+  archivo=${archivo:a}
+  r=$(hc send $t --wait --timeout 10 --json "Tu encargo esta en $archivo: leelo y ejecutalo." 2>&1)
+  if [[ $(jq -r '.wait.reason // .reason // empty' <<<$r 2>/dev/null) == not_started ]]; then
+    hc keys $t enter >/dev/null  # quedó en el compositor sin enviar
+    aviso "el encargo no arrancó: Enter otra vez"
+  elif [[ $(jq -r '.started // false' <<<$r 2>/dev/null) != true ]]; then
+    die "no se pudo mandar el encargo a $t: $r"
+  fi
+  aviso "encargo: $archivo"
+fi
+print -r -- $t
