@@ -14,6 +14,9 @@ Diseño (canvas): https://claude.ai/artifact/5rVDW3BgbwVmEpvcSkQ9Lj — ronda 3 
   con sus tareas), Tablero (tarjetas del mismo alto), Gantt, Decisiones.
 - **Derecha:** Entorno, compartido por todo: cupo 5h y 7d por suscripción, CPU, RAM, disco y
   sesiones contra su presupuesto. Solo se colorea lo que está cerca o encima del límite.
+- **También desde el iPhone:** Juan maneja la flota por la web de Shepherdr sobre Tailscale. Todo lo
+  que se vea o se use tiene que leerse bien a 390 × 844, sin scroll horizontal, con áreas táctiles
+  cómodas y sin depender de teclas que el teléfono no tiene. Se comprueba con Playwright a ese tamaño.
 
 ## Fuentes de verdad
 
@@ -33,7 +36,7 @@ no tiene ArtifactData y no hay API pública). Por eso el TPM es el puente: en ca
 0. Repo y plan. ✓
 1. Shepherdr instalado como base. ✓
 2. La flota corre en herdr-core (`hc`), con etiquetas `flota.producto`, `flota.rol`,
-   `flota.padre`, `flota.tarea` en cada terminal.
+   `flota.padre`, `flota.tarea` y `flota.asiento` en cada terminal. En curso: lanzador ✓.
 3. Árbol de productos.
 4. Entorno. ✓ (primero, por ser independiente del resto)
 5. Iniciativas, desde el archivo que escribe el TPM.
@@ -82,3 +85,36 @@ Cada paso se prueba en la app antes de seguir (`herdr-app check`, `herdr-app sho
    ```
 
    Los registros quedan en `~/.herdr/flota/perfil/<session_id>`. Prueba: `zsh shell/prueba.zsh`.
+
+## Lanzar un asiento
+
+`bin/flota-lanzar` abre una sesión de agente en herdr-core (solo `hc`, nunca la Herdr de terminal):
+
+```sh
+bin/flota-lanzar --asiento ccw --producto english-learning --rol autor --tarea ELR-01.3.6 \
+  --padre capitan-elr --cwd ~/Codes/Letz/english-learning-renew --encargo-archivo ENCARGO.md
+```
+
+- **Asiento:** `ccp` y `ccw` lanzan `claude --dangerously-skip-permissions` con su `CLAUDE_CONFIG_DIR`
+  (`~/.claude`, `~/.claude-work`); `codex` lanza `codex --no-daemon --no-alt-screen` (en línea, para que la respuesta se lea en el teléfono) con `--sandbox workspace-write
+  --ask-for-approval never`.
+- **Modelo y esfuerzo:** `--modelo` y `--esfuerzo`. Por defecto `opus high` en Claude y
+  `gpt-6.1-sol high` en Codex. Un modelo de Codex que no esté en `~/.codex/models_cache.json` se rechaza
+  antes de lanzar (los nombres cortos no existen; hoy el barato es `gpt-6-luna`, no hay `gpt-6.1-luna`).
+- **Etiquetas:** `flota.producto`, `flota.rol`, `flota.asiento`, `flota.padre` (por defecto, el terminal
+  que lo lanza) y `flota.tarea`. Si el padre es un terminal vivo, hc le avisa cuando el hijo se bloquea.
+- **Nombre:** `<rol>-<tarea>` en minúsculas, 24 caracteres como mucho, para que se lea en el teléfono
+  (`autor-elr-01-3-6`); `--nombre` lo cambia. La sesión sobrevive a quien la lanzó.
+- **Arranque:** lee la pantalla con `hc read` y espera con `hc wait`. Acepta la confianza de carpeta;
+  los hooks nuevos de Codex los salta sin aprobarlos (eso lo decide Juan, abriendo `codex` y pulsando `t`).
+- **Encargo:** `--encargo "<texto>"` (se guarda en `~/.herdr/flota/encargos/<nombre>.md`) o
+  `--encargo-archivo <ruta>`. Se manda un puntero al archivo cuando el agente está libre, y se comprueba
+  que el turno arrancó.
+- **Espacio:** `--espacio <nombre|id>` lo pone como pestaña de ese espacio de la app, con su nombre corto,
+  y así se ve y se maneja desde la web del iPhone. Por defecto va al espacio de quien lo lanza, si tiene uno;
+  si no, queda oculto (solo en `hc ls`).
+- Imprime la dirección del terminal (`t7`): `hc get t7`, `hc read t7`, `hc attach t7`.
+
+Prueba: `zsh shell/prueba-lanzador.zsh` lanza un ccp y un ccw en Haiku y un codex en `gpt-6-luna low`,
+cada uno en una carpeta temporal, comprueba etiquetas, perfil y que respondió su palabra, y borra todo
+lo suyo al terminar (terminales, carpetas, transcripciones y registros de perfil). Tarda ~30 s.
