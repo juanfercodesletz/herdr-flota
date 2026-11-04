@@ -33,7 +33,7 @@ for line in reversed(open(f).read().splitlines()[-400:]):
 `;
 
 // Los números del Mac en una sola llamada.
-const MAC = `sysctl -n hw.ncpu vm.loadavg hw.memsize; vm_stat; df -k "$HOME" | tail -1; herdr agent list 2>/dev/null | python3 -c "import json,sys;print('TUI', len(json.load(sys.stdin)['result']['agents']))" 2>/dev/null`;
+const MAC = `sysctl -n hw.ncpu hw.memsize kern.memorystatus_level; top -l 2 -n 0 -s 1 | grep 'CPU usage' | tail -1; df -k "$HOME" | tail -1; herdr agent list 2>/dev/null | python3 -c "import json,sys;print('TUI', len(json.load(sys.stdin)['result']['agents']))" 2>/dev/null`;
 
 export default class Entorno extends View {
   init(_props, cx) {
@@ -104,7 +104,7 @@ export default class Entorno extends View {
 
     // Dónde estamos: cuántas sesiones caben y en qué asientos se puede lanzar.
     let head = "Midiendo…", sub = "";
-    if (m) {
+    if (m && m.ramUsedGb != null) {
       const perSession = sessions ? m.ramUsedGb / sessions : 1.2;
       const ramRoom = Math.floor((m.ramGb * cap.ram / 100 - m.ramUsedGb) / Math.max(perSession, 0.3));
       const room = Math.max(0, Math.min(ramRoom, cap.sesiones - sessions));
@@ -125,8 +125,8 @@ export default class Entorno extends View {
       .child(v_flex().gap(14)
         .child(head2("Este Mac", "Presupuesto"))
         .when(Boolean(m), (el) => el.children([
-          row("CPU", m.cpu, cap.cpu, `${m.cpu}%`, `${cap.cpu}%`),
-          row("RAM", Math.round(m.ramUsedGb / m.ramGb * 100), cap.ram, `${m.ramUsedGb.toFixed(0)} GB`, `${Math.round(m.ramGb * cap.ram / 100)} GB`),
+          row("CPU", m.cpu, cap.cpu, m.cpu == null ? "—" : `${m.cpu}%`, `${cap.cpu}%`),
+          row("RAM", m.ramUsedGb == null ? null : Math.round(m.ramUsedGb / m.ramGb * 100), cap.ram, m.ramUsedGb == null ? "—" : `${m.ramUsedGb.toFixed(0)} GB`, `${Math.round(m.ramGb * cap.ram / 100)} GB`),
           row("Disco libre", diskPct(m, cap), 100, `${m.diskFreeGb} GB`, `${cap.disco_min_gb} GB mín`),
           row("Sesiones", Math.round(sessions / cap.sesiones * 100), 100, `${sessions}`, `${cap.sesiones}`),
         ])))
@@ -163,20 +163,18 @@ function diskPct(m, cap) {
 
 function parseMac(out) {
   const lines = out.split("\n");
-  const ncpu = Number(lines[0]);
-  const load1 = Number((lines[1] || "").replace(/[{}]/g, "").trim().split(/\s+/)[0]);
-  const memBytes = Number(lines[2]);
-  const pageSize = Number((out.match(/page size of (\d+)/) || [])[1] || 16384);
-  const pages = (name) => Number((out.match(new RegExp(name + ":\\s+(\\d+)")) || [])[1] || 0);
-  // ponytail: "memoria usada" como Monitor de Actividad (app + wired + comprimida), aproximada desde vm_stat
-  const used = (pages("Anonymous pages") - pages("Pages purgeable") + pages("Pages wired down") + pages("Pages occupied by compressor")) * pageSize;
+  const memBytes = Number(lines[1]);
+  // RAM: lo que macOS da por disponible (kern.memorystatus_level = "memory free percentage" de
+  // memory_pressure). Cuenta como libre el caché y lo que el sistema suelta bajo presión.
+  const freePct = /^\d+$/.test(lines[2] || "") ? Number(lines[2]) : null;
+  // CPU: uso real (100 - idle) de la segunda muestra de top; la carga cuenta procesos en espera.
+  const idle = (out.match(/([\d.]+)% idle/) || [])[1];
   const df = (lines.find((l) => l.startsWith("/")) || "").split(/\s+/);
   const tui = Number((out.match(/^TUI (\d+)$/m) || [])[1] || 0);
   return {
-    // ponytail: CPU = load de 1 min sobre núcleos; leer top -l 2 si hace falta el % exacto
-    cpu: clamp((load1 / ncpu) * 100),
+    cpu: idle == null ? null : clamp(100 - Number(idle)),
     ramGb: memBytes / 2 ** 30,
-    ramUsedGb: used / 2 ** 30,
+    ramUsedGb: freePct == null ? null : (memBytes * (100 - freePct)) / 100 / 2 ** 30,
     diskTotalGb: Math.round(Number(df[1]) / 2 ** 20),
     diskFreeGb: Math.round(Number(df[3]) / 2 ** 20),
     tui,
