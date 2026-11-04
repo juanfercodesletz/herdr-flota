@@ -56,7 +56,9 @@ Cada paso se prueba en la app antes de seguir (`herdr-app check`, `herdr-app sho
 
    Codex no necesita nada: Entorno lee su cupo del último log en `~/.codex/sessions`.
 4. Los techos se cambian en `~/.herdr/flota/presupuesto.json`, por ejemplo
-   `{"ccw": 90, "ccp": 90, "codex": 100, "cpu": 85, "ram": 90, "disco_min_gb": 150, "sesiones": 100}`.
+   `{"ccw": 90, "ccp": 90, "codex": 100, "cpu": 85, "ram": 90, "disco_flota_gb": 100, "disco_min_gb": 20, "sesiones": 100}`.
+   El disco cuenta lo que ocupa la flota (worktrees sin `.venv`, caché de uv, Docker de OrbStack),
+   medido cada 30 min; `disco_min_gb` es el libre bajo el cual la fila se pone roja igual.
 5. Para que cada sesión de Claude vuelva con su perfil tras un reinicio (Herdr las relanza con
    `claude --resume <id>`, sin perfil), carga la función en `~/.zshrc`:
 

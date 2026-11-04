@@ -3,10 +3,11 @@
 // cerca (10 puntos) o encima del techo.
 import { View, div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { exec, readTextFile, home, agents, theme } from "herdr";
+import { exec, readTextFile, home, appHome, agents, theme } from "herdr";
 
 // Techos por defecto; ~/.herdr/flota/presupuesto.json los cambia.
-const DEFAULTS = { ccw: 90, ccp: 90, codex: 100, cpu: 85, ram: 90, disco_min_gb: 150, sesiones: 100 };
+// disco_flota_gb: lo que puede ocupar la flota; disco_min_gb: libre bajo el cual el disco va en rojo.
+const DEFAULTS = { ccw: 90, ccp: 90, codex: 100, cpu: 85, ram: 90, disco_flota_gb: 100, disco_min_gb: 20, sesiones: 100 };
 const SEATS = ["ccw", "ccp", "codex"];
 
 // Codex no tiene barra de estado: su cupo sale del último log de sesión.
@@ -40,6 +41,7 @@ export default class Entorno extends View {
     this.cap = DEFAULTS;
     this.seats = {};
     this.mac = null;
+    this.disk = null;
     cx.timer.every(15000, (cx) => this.refresh(cx));
     this.refresh(cx);
   }
@@ -61,6 +63,12 @@ export default class Entorno extends View {
       }
       try { this.seats.codex = JSON.parse((await exec("python3", ["-c", CODEX])).stdout || "null"); } catch { this.seats.codex = null; }
       try { this.mac = parseMac((await exec("sh", ["-c", MAC])).stdout); } catch { this.mac = null; }
+      // Disco: disco.sh tarda ~1 min, así que corre aparte y deja disco.txt; se relanza cada 30 min.
+      try { this.disk = parseDisco((await readTextFile(flota + "/disco.txt")) || ""); } catch { this.disk = null; }
+      if ((!this.disk || Date.now() / 1000 - this.disk.at > 1800) && Date.now() - (this.diskLaunched || 0) > 600000) {
+        this.diskLaunched = Date.now();
+        exec("sh", ["-c", `nohup sh "${appHome()}/mods/flota-entorno/disco.sh" >/dev/null 2>&1 &`]).catch(() => {});
+      }
       cx.notify();
     });
   }
@@ -127,7 +135,7 @@ export default class Entorno extends View {
         .when(Boolean(m), (el) => el.children([
           row("CPU", m.cpu, cap.cpu, m.cpu == null ? "—" : `${m.cpu}%`, `${cap.cpu}%`),
           row("RAM", m.ramUsedGb == null ? null : Math.round(m.ramUsedGb / m.ramGb * 100), cap.ram, m.ramUsedGb == null ? "—" : `${m.ramUsedGb.toFixed(0)} GB`, `${Math.round(m.ramGb * cap.ram / 100)} GB`),
-          row("Disco libre", diskPct(m, cap), 100, `${m.diskFreeGb} GB`, `${cap.disco_min_gb} GB mín`),
+          row("Disco (flota)", diskPct(m, this.disk, cap), 100, this.disk ? `${Math.round(this.disk.total)} GB` : "—", `${cap.disco_flota_gb} GB`, diskNote(m, this.disk)),
           row("Sesiones", Math.round(sessions / cap.sesiones * 100), 100, `${sessions}`, `${cap.sesiones}`),
         ])))
       .child(div().flex_1())
@@ -155,10 +163,30 @@ function resetAt(at) {
   return `${days === 0 ? "hoy" : days === 1 ? "mañana" : DIAS[d.getDay()]} ${hm}`;
 }
 
-// Disco: 100% de la barra = llegar al mínimo libre. Se pinta lo consumido del margen.
-function diskPct(m, cap) {
-  const margin = m.diskTotalGb - cap.disco_min_gb;
-  return clamp(((m.diskTotalGb - m.diskFreeGb) / Math.max(margin, 1)) * 100);
+// Disco: lo que ocupa la flota contra su presupuesto. Si el libre baja del mínimo, rojo igual.
+function diskPct(m, d, cap) {
+  if (m.diskFreeGb <= cap.disco_min_gb) return 100;
+  return d ? clamp((d.total / cap.disco_flota_gb) * 100) : null;
+}
+
+function diskNote(m, d) {
+  const parts = d ? [["worktrees", d.wt], ["uv", d.uv], ["Docker", d.docker]].filter(([, v]) => v != null).map(([k, v]) => `${k} ${Math.round(v)}`) : ["midiendo…"];
+  parts.push(`libres ${m.diskFreeGb} GB`);
+  if (d && Date.now() / 1000 - d.at > 3600) parts.push(`medido ${ago(d.at)}`);
+  return parts.join(" · ");
+}
+
+// disco.txt de disco.sh → GB (2^30) de cada parte; null en la parte que no se pudo medir
+// (Docker apagado, carpeta que no existe) y null entero si aún no hay medición.
+function parseDisco(out) {
+  const at = Number((out.match(/^at (\d+)$/m) || [])[1]);
+  if (!at) return null;
+  const kb = (k) => { const v = (out.match(new RegExp(`^${k} (\\d+)$`, "m")) || [])[1]; return v == null ? null : Number(v) / 2 ** 20; };
+  const U = { B: 1, kB: 1e3, KB: 1e3, MB: 1e6, GB: 1e9, TB: 1e12 };
+  const dk = [...out.matchAll(/^docker ([\d.]+)\s*([kKMGT]?B)$/gm)];
+  const docker = dk.length ? dk.reduce((s, [, n, u]) => s + Number(n) * U[u], 0) / 2 ** 30 : null;
+  const wt = kb("wt"), uv = kb("uv");
+  return { at, wt, uv, docker, total: (wt ?? 0) + (uv ?? 0) + (docker ?? 0) };
 }
 
 function parseMac(out) {
@@ -175,7 +203,6 @@ function parseMac(out) {
     cpu: idle == null ? null : clamp(100 - Number(idle)),
     ramGb: memBytes / 2 ** 30,
     ramUsedGb: freePct == null ? null : (memBytes * (100 - freePct)) / 100 / 2 ** 30,
-    diskTotalGb: Math.round(Number(df[1]) / 2 ** 20),
     diskFreeGb: Math.round(Number(df[3]) / 2 ** 20),
     tui,
   };
