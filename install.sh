@@ -27,4 +27,35 @@ d["children"].append({"id": "entorno", "type": "block", "size": {"px": 260}, "mi
 json.dump(d, open(f"{app}/layouts/flota.json", "w"), indent=2, ensure_ascii=False)
 print("  layout  flota")
 EOF
-echo "Listo. En Herdr: Ctrl+Shift+L hasta el layout flota."
+
+# Entorno en la web de Shepherdr: el plugin va a ~/.shepherdr/plugins (Shepherdr lo copia en cada build de su web),
+# con el mismo cálculo que el mod. Los datos son la foto que escribe el mod en ~/.herdr/flota/web/entorno.json;
+# un servidor local la sirve y Tailscale la publica en /flota del mismo tailnet (la app de Tailscale en macOS no
+# puede servir una carpeta). `shepherdr update` reconstruye la web solo si el plugin cambió.
+plug="${SHEPHERDR_HOME:-$HOME/.shepherdr}/plugins/flota-entorno"
+mkdir -p "$plug" && rsync -a --delete --exclude calc.js "$here/web/flota-entorno/" "$plug/" && rsync -a "$here/mods/flota-entorno/calc.js" "$plug/"
+echo "  web     flota-entorno"
+if [ "$(uname)" = Darwin ]; then
+  mkdir -p "$HOME/.herdr/flota/web"
+  plist="$HOME/Library/LaunchAgents/dev.herdr-flota.web.plist"
+  cat > "$plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>dev.herdr-flota.web</string>
+  <key>ProgramArguments</key><array>
+    <string>$(command -v python3)</string><string>-m</string><string>http.server</string><string>7790</string>
+    <string>--bind</string><string>127.0.0.1</string><string>--directory</string><string>$HOME/.herdr/flota/web</string>
+  </array>
+  <key>RunAtLoad</key><true/><key>KeepAlive</key><true/>
+  <key>StandardErrorPath</key><string>/dev/null</string>
+</dict></plist>
+PLIST
+  launchctl bootout "gui/$(id -u)/dev.herdr-flota.web" 2>/dev/null || true
+  launchctl bootstrap "gui/$(id -u)" "$plist"
+  echo "  servicio dev.herdr-flota.web (127.0.0.1:7790)"
+fi
+command -v tailscale >/dev/null && tailscale serve --bg --set-path /flota http://127.0.0.1:7790 >/dev/null && echo "  tailnet /flota"
+command -v shepherdr >/dev/null && shepherdr update --yes --keys keep | grep -i "web app" || true
+
+echo "Listo. En Herdr: Ctrl+Shift+L hasta el layout flota. En la web: Entorno, al pie de la barra lateral."
