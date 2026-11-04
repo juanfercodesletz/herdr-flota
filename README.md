@@ -59,7 +59,15 @@ Cada paso se prueba en la app antes de seguir (`herdr-app check`, `herdr-app sho
    `{"ccw": 90, "ccp": 90, "codex": 100, "cpu": 85, "ram": 90, "disco_flota_gb": 100, "disco_min_gb": 20, "sesiones": 100}`.
    El disco cuenta lo que ocupa la flota (worktrees sin `.venv`, caché de uv, Docker de OrbStack),
    medido cada 30 min; `disco_min_gb` es el libre bajo el cual la fila se pone roja igual.
-5. Para que cada sesión de Claude vuelva con su perfil tras un reinicio (Herdr las relanza con
+5. Entorno en la web de Shepherdr (el iPhone): `install.sh` deja el plugin en `~/.shepherdr/plugins/flota-entorno`
+   (`web/flota-entorno` + el `calc.js` del mod), levanta el servicio launchd `dev.herdr-flota.web` (sirve
+   `~/.herdr/flota/web` en 127.0.0.1:7790), publica `/flota` con `tailscale serve` y corre `shepherdr update` para
+   reconstruir la web. Necesita que Shepherdr cargue plugins de `~/.shepherdr/plugins` (commit local 07859b09 en
+   la copia de Shepherdr, «Web: load the human's own plugins»). Los datos son la foto que escribe el panel del
+   escritorio cada 15 s: con Herdr cerrado o sin el layout `flota`, la web avisa que el dato es viejo.
+   En el teléfono: cajón de espacios → **Entorno**, al pie. Se quita con
+   `launchctl bootout gui/$(id -u)/dev.herdr-flota.web` y `tailscale serve --set-path /flota off`.
+6. Para que cada sesión de Claude vuelva con su perfil tras un reinicio (Herdr las relanza con
    `claude --resume <id>`, sin perfil), carga la función en `~/.zshrc`:
 
    ```sh
