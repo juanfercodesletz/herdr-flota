@@ -73,36 +73,31 @@ export default class Entorno extends View {
       .child(div().h(3).rounded(2).w(`${clamp(n)}%`).bg(tone(n, c)))
       .when(c < 100, (el) => el.child(div().absolute().top(-2).left(`${c}%`).w(1).h(7).bg(t.foreground).opacity(0.5)));
     const lbl = (s) => div().text_size(10.5).text_color(t.dim).child(s.toUpperCase());
+    const head2 = (left, right) => h_flex().child(div().flex_1().child(lbl(left))).child(div().w(70).flex().justify_end().child(lbl(right)));
 
-    // Cupo
-    // Un dato que llegó sin esa ventana (Ultra no tiene 5h) es "sin límite", no "—".
-    const cell = (w, c, hasData) => v_flex().w(80).gap(3)
-      .child(w
-        ? h_flex().items_baseline().gap(5)
-            .child(div().text_size(11.5).text_color(tone(w.pct, c)).child(`${Math.round(w.pct)}%`))
-            .child(div().text_size(10).text_color(t.dim).child(resetAt(w.reset)))
-        : div().text_size(11).text_color(t.dim).child(hasData ? "sin límite" : "—"))
-      .when(Boolean(w), (el) => el.child(bar(w.pct, c)));
+    // Una sola forma de fila para todo el panel: nombre, valor, dato gris a la derecha, barra
+    // a todo el ancho y, si hace falta, una nota chica debajo.
+    const row = (k, pct, c, val, right, note) => v_flex().gap(4)
+      .child(h_flex().items_baseline()
+        .child(div().flex_1().text_size(12.5).text_color(t.foreground).child(k))
+        .child(div().text_size(12).text_color(tone(pct, c)).child(val))
+        .child(div().w(70).flex().justify_end().text_size(11).text_color(t.dim).child(right)))
+      .child(bar(pct ?? 0, c))
+      .when(Boolean(note), (el) => el.child(div().text_size(10.5).text_color(t.dim).child(note)));
+
+    // Cupo: la ventana semanal manda (es la del techo para lanzar); la de 5h va de nota.
     const seatRow = (k) => {
-      const s = this.seats[k];
-      const c = cap[k];
-      const stale = !s?.at ? "sin datos" : Date.now() / 1000 - s.at > 1800 ? ago(s.at) : "";
-      return h_flex().items_center().gap(10)
-        .child(v_flex().flex_1().min_w(0)
-          .child(div().text_size(12.5).text_color(t.foreground).child(k))
-          .when(Boolean(stale), (el) => el.child(div().text_size(10.5).text_color(t.dim).child(stale))))
-        .child(cell(s?.["5h"], c, Boolean(s?.at))).child(cell(s?.["7d"], c, Boolean(s?.at)));
+      const s = this.seats[k], c = cap[k], w = s?.["7d"], h = s?.["5h"];
+      const notes = [];
+      if (h) notes.push(`5 h: ${Math.round(h.pct)}% · reinicia ${resetAt(h.reset)}`);
+      if (!s?.at) notes.push("sin datos");
+      else if (Date.now() / 1000 - s.at > 1800) notes.push(`dato de ${ago(s.at)}`);
+      return row(k, w?.pct, c, w ? `${Math.round(w.pct)}%` : "—", w ? resetAt(w.reset) : "", notes.join(" · "));
     };
 
     // Este Mac
     const m = this.mac;
     const sessions = (m ? m.tui : 0) + agents().length;
-    const macRow = (k, pct, c, val, capT) => v_flex().gap(3)
-      .child(h_flex().items_center().text_size(11.5)
-        .child(div().flex_1().text_size(12.5).text_color(t.foreground).child(k))
-        .child(div().text_color(tone(pct, c)).child(val))
-        .child(div().text_color(t.dim).child(`  │ ${capT}`)))
-      .child(bar(pct, c));
 
     // Dónde estamos: cuántas sesiones caben y en qué asientos se puede lanzar.
     let head = "Midiendo…", sub = "";
@@ -121,19 +116,19 @@ export default class Entorno extends View {
       .child(v_flex().gap(2)
         .child(div().text_size(15).font_semibold().child(head))
         .child(div().text_size(11.5).text_color(t.muted).child(sub)))
-      .child(v_flex().gap(10)
-        .child(h_flex().gap(10).child(div().flex_1().child(lbl("Cupo"))).child(div().w(80).child(lbl("5h"))).child(div().w(80).child(lbl("7d"))))
+      .child(v_flex().gap(14)
+        .child(head2("Cupo semanal", "Reinicia"))
         .children(SEATS.map(seatRow)))
-      .child(v_flex().gap(10)
-        .child(lbl("Este Mac"))
+      .child(v_flex().gap(14)
+        .child(head2("Este Mac", "Presupuesto"))
         .when(Boolean(m), (el) => el.children([
-          macRow("CPU", m.cpu, cap.cpu, `${m.cpu}%`, `${cap.cpu}%`),
-          macRow("RAM", Math.round(m.ramUsedGb / m.ramGb * 100), cap.ram, `${m.ramUsedGb.toFixed(0)} GB`, `${Math.round(m.ramGb * cap.ram / 100)} GB`),
-          macRow("Disco libre", diskPct(m, cap), 100, `${m.diskFreeGb} GB`, `${cap.disco_min_gb} mín`),
-          macRow("Sesiones", Math.round(sessions / cap.sesiones * 100), 100, `${sessions}`, `${cap.sesiones}`),
+          row("CPU", m.cpu, cap.cpu, `${m.cpu}%`, `${cap.cpu}%`),
+          row("RAM", Math.round(m.ramUsedGb / m.ramGb * 100), cap.ram, `${m.ramUsedGb.toFixed(0)} GB`, `${Math.round(m.ramGb * cap.ram / 100)} GB`),
+          row("Disco libre", diskPct(m, cap), 100, `${m.diskFreeGb} GB`, `${cap.disco_min_gb} GB mín`),
+          row("Sesiones", Math.round(sessions / cap.sesiones * 100), 100, `${sessions}`, `${cap.sesiones}`),
         ])))
       .child(div().flex_1())
-      .child(div().text_size(10.5).text_color(t.dim).child("Raya = presupuesto. Solo se colorea lo que está cerca o encima."));
+      .child(div().text_size(10.5).text_color(t.dim).child("La raya marca el techo. Solo se colorea lo que está cerca o encima."));
   }
 }
 
@@ -147,13 +142,13 @@ function ago(at) {
   return `hace ${Math.round(s / 86400)} d`;
 }
 
-// Reset: la hora si es en menos de 24 h, si no el día de la semana.
+// Reset: la hora si es en menos de 24 h, si no el día y la hora.
 const DIAS = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
 function resetAt(at) {
   if (!at) return "";
   const d = new Date(at * 1000);
-  if (at - Date.now() / 1000 < 86400) return `↻${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-  return `↻${DIAS[d.getDay()]}`;
+  const hm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  return at - Date.now() / 1000 < 86400 ? hm : `${DIAS[d.getDay()]} ${hm}`;
 }
 
 // Disco: 100% de la barra = llegar al mínimo libre. Se pinta lo consumido del margen.
