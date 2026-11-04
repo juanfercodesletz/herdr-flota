@@ -75,17 +75,23 @@ export default class Entorno extends View {
     const lbl = (s) => div().text_size(10.5).text_color(t.dim).child(s.toUpperCase());
 
     // Cupo
-    const cell = (w, c) => v_flex().w(64).gap(3)
-      .child(div().text_size(11.5).text_color(w ? tone(w.pct, c) : t.dim).child(w ? `${Math.round(w.pct)}%` : "—"))
-      .child(bar(w?.pct ?? 0, c));
+    // Un dato que llegó sin esa ventana (Ultra no tiene 5h) es "sin límite", no "—".
+    const cell = (w, c, hasData) => v_flex().w(80).gap(3)
+      .child(w
+        ? h_flex().items_baseline().gap(5)
+            .child(div().text_size(11.5).text_color(tone(w.pct, c)).child(`${Math.round(w.pct)}%`))
+            .child(div().text_size(10).text_color(t.dim).child(resetAt(w.reset)))
+        : div().text_size(11).text_color(t.dim).child(hasData ? "sin límite" : "—"))
+      .when(Boolean(w), (el) => el.child(bar(w.pct, c)));
     const seatRow = (k) => {
       const s = this.seats[k];
       const c = cap[k];
+      const stale = !s?.at ? "sin datos" : Date.now() / 1000 - s.at > 1800 ? ago(s.at) : "";
       return h_flex().items_center().gap(10)
         .child(v_flex().flex_1().min_w(0)
           .child(div().text_size(12.5).text_color(t.foreground).child(k))
-          .child(div().text_size(10.5).text_color(t.dim).child(s?.at ? ago(s.at) : "sin datos")))
-        .child(cell(s?.["5h"], c)).child(cell(s?.["7d"], c));
+          .when(Boolean(stale), (el) => el.child(div().text_size(10.5).text_color(t.dim).child(stale))))
+        .child(cell(s?.["5h"], c, Boolean(s?.at))).child(cell(s?.["7d"], c, Boolean(s?.at)));
     };
 
     // Este Mac
@@ -116,7 +122,7 @@ export default class Entorno extends View {
         .child(div().text_size(15).font_semibold().child(head))
         .child(div().text_size(11.5).text_color(t.muted).child(sub)))
       .child(v_flex().gap(10)
-        .child(h_flex().gap(10).child(div().flex_1().child(lbl("Cupo"))).child(div().w(64).child(lbl("5h"))).child(div().w(64).child(lbl("7d"))))
+        .child(h_flex().gap(10).child(div().flex_1().child(lbl("Cupo"))).child(div().w(80).child(lbl("5h"))).child(div().w(80).child(lbl("7d"))))
         .children(SEATS.map(seatRow)))
       .child(v_flex().gap(10)
         .child(lbl("Este Mac"))
@@ -139,6 +145,15 @@ function ago(at) {
   if (s < 3600) return `hace ${Math.round(s / 60)} min`;
   if (s < 86400) return `hace ${Math.round(s / 3600)} h`;
   return `hace ${Math.round(s / 86400)} d`;
+}
+
+// Reset: la hora si es en menos de 24 h, si no el día de la semana.
+const DIAS = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
+function resetAt(at) {
+  if (!at) return "";
+  const d = new Date(at * 1000);
+  if (at - Date.now() / 1000 < 86400) return `↻${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  return `↻${DIAS[d.getDay()]}`;
 }
 
 // Disco: 100% de la barra = llegar al mínimo libre. Se pinta lo consumido del margen.

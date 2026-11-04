@@ -45,7 +45,7 @@ Cada paso se prueba en la app antes de seguir (`herdr-app check`, `herdr-app sho
 ## Instalar
 
 1. Instala Shepherdr (`./install.sh` en su repo) y corre `shepherdr doctor`.
-2. En este repo: `./install.sh`. Enlaza los mods y genera el layout `flota` desde el de Shepherdr.
+2. En este repo: `./install.sh`. Copia los mods y genera el layout `flota` desde el de Shepherdr.
    Vuelve a correrlo después de cada `shepherdr update`.
 3. Para que Entorno vea el cupo de Claude Code, agrega esta línea a tu script de barra de estado,
    después de leer `rate_limits` (cambia `ccp` por el nombre del perfil):

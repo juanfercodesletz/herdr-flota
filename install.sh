@@ -1,5 +1,5 @@
 #!/bin/sh
-# Instala herdr-flota sobre Shepherdr: enlaza los mods de este repo en la app Herdr y genera
+# Instala herdr-flota sobre Shepherdr: copia los mods de este repo en la app Herdr y genera
 # el layout `flota` = el de Shepherdr + nuestras piezas. Se corre otra vez después de cada
 # `shepherdr update`, porque el layout se regenera desde el suyo. No toca nada de Shepherdr.
 set -e
@@ -9,7 +9,9 @@ app="${HERDR_APP_HOME:-$HOME/.config/herdr-app}"
 
 for m in "$here"/mods/*/; do
   name=$(basename "$m")
-  ln -sfn "${m%/}" "$app/mods/$name"
+  # ponytail: copia, no symlink: Herdr no recarga mods enlazados. Correr de nuevo tras cada cambio.
+  [ -L "$app/mods/$name" ] && rm "$app/mods/$name"
+  mkdir -p "$app/mods/$name" && rsync -a --delete "$m" "$app/mods/$name/"
   echo "  mod     $name"
 done
 
