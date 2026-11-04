@@ -88,7 +88,7 @@ bin/flota-lanzar --asiento ccw --producto english-learning --rol autor --tarea E
 ```
 
 - **Asiento:** `ccp` y `ccw` lanzan `claude --dangerously-skip-permissions` con su `CLAUDE_CONFIG_DIR`
-  (`~/.claude`, `~/.claude-work`); `codex` lanza `codex --no-daemon` con `--sandbox workspace-write
+  (`~/.claude`, `~/.claude-work`); `codex` lanza `codex --no-daemon --no-alt-screen` (en línea, para que la respuesta se lea en el teléfono) con `--sandbox workspace-write
   --ask-for-approval never`.
 - **Modelo y esfuerzo:** `--modelo` y `--esfuerzo`. Por defecto `opus high` en Claude y
   `gpt-6.1-sol high` en Codex. Un modelo de Codex que no esté en `~/.codex/models_cache.json` se rechaza
@@ -102,6 +102,9 @@ bin/flota-lanzar --asiento ccw --producto english-learning --rol autor --tarea E
 - **Encargo:** `--encargo "<texto>"` (se guarda en `~/.herdr/flota/encargos/<nombre>.md`) o
   `--encargo-archivo <ruta>`. Se manda un puntero al archivo cuando el agente está libre, y se comprueba
   que el turno arrancó.
+- **Espacio:** `--espacio <nombre|id>` lo pone como pestaña de ese espacio de la app, con su nombre corto,
+  y así se ve y se maneja desde la web del iPhone. Por defecto va al espacio de quien lo lanza, si tiene uno;
+  si no, queda oculto (solo en `hc ls`).
 - Imprime la dirección del terminal (`t7`): `hc get t7`, `hc read t7`, `hc attach t7`.
 
 Prueba: `zsh shell/prueba-lanzador.zsh` lanza un ccp y un ccw en Haiku y un codex en `gpt-6-luna low`,

@@ -3,24 +3,32 @@
 # las compuertas de primer arranque y le manda el encargo cuando ya puede recibirlo.
 #
 #   flota-lanzar --asiento ccp|ccw|codex --producto <p> --rol <r> [--tarea <id>] [--padre <t|nombre>]
-#                [--nombre <n>] [--cwd <carpeta>] [--modelo <m>] [--esfuerzo <e>]
+#                [--nombre <n>] [--cwd <carpeta>] [--modelo <m>] [--esfuerzo <e>] [--espacio <nombre|id>]
 #                [--encargo <texto> | --encargo-archivo <ruta>]
 #
 # Imprime la dirección del terminal (t7). Solo usa `hc`, nunca la Herdr de terminal.
+# --espacio: la sesión sale como pestaña de ese espacio de la app (y de la web del iPhone). Por
+# defecto, el espacio de quien la lanza, si tiene uno; sin espacio queda oculta, solo en `hc ls`.
 # Las trampas de cada asiento están medidas en la skill asientos-de-flota.
 setopt pipefail
 die() { print -u2 -- "flota-lanzar: $*"; exit 1 }
 aviso() { print -u2 -- "  $*" }
 
 zparseopts -D -F -- -asiento:=o_a -producto:=o_p -rol:=o_r -tarea:=o_t -padre:=o_pa -nombre:=o_n \
-  -cwd:=o_c -modelo:=o_m -esfuerzo:=o_e -encargo:=o_enc -encargo-archivo:=o_arc -help=o_h || exit 2
-[[ -n $o_h ]] && { sed -n '5,7p' $0; exit 0 }
+  -cwd:=o_c -modelo:=o_m -esfuerzo:=o_e -espacio:=o_sp -encargo:=o_enc -encargo-archivo:=o_arc -help=o_h || exit 2
+[[ -n $o_h ]] && { sed -n '5,11p' $0; exit 0 }
 asiento=$o_a[-1] producto=$o_p[-1] rol=$o_r[-1] tarea=$o_t[-1] padre=${o_pa[-1]:-$HC_TERMINAL_ID}
 cwd=${o_c[-1]:-$PWD} esfuerzo=${o_e[-1]:-high} encargo=$o_enc[-1] archivo=$o_arc[-1]
 [[ -n $asiento && -n $producto && -n $rol ]] || die "faltan --asiento, --producto o --rol (--help)"
 [[ -d $cwd ]] || die "no existe la carpeta $cwd"
 [[ -n $encargo && -n $archivo ]] && die "--encargo o --encargo-archivo, no los dos"
 [[ -z $archivo || -f $archivo ]] || die "no existe el encargo $archivo"
+espacio=${o_sp[-1]:-$( [[ -n $HC_TERMINAL_ID ]] && hc get $HC_TERMINAL_ID --json 2>/dev/null | jq -r '.labels["herdr.space"] // empty')}
+if [[ -n $espacio && $espacio != sp* ]]; then  # un nombre: su id, de la app
+  id=$(herdr-app ls 2>/dev/null | jq -r --arg n $espacio '[.spaces[] | select(.name == $n) | .id][0] // empty')
+  [[ -n $id ]] || die "no hay un espacio '$espacio' en la app (herdr-app ls)"
+  espacio=$id
+fi
 
 case $asiento in
   ccp|ccw)
@@ -37,8 +45,9 @@ case $asiento in
       [[ -n $niveles ]] || die "Codex no tiene el modelo '$modelo'. Hay: $(jq -r '[.models[].slug] | join(", ")' $cache)"
       [[ " $niveles " == *" $esfuerzo "* ]] || die "$modelo no acepta el esfuerzo '$esfuerzo' (acepta: $niveles)"
     fi
-    # --no-daemon: sin él, los comandos de Codex corren fuera de hc. El esfuerzo va siempre: el default es none.
-    cmd=(codex --no-daemon -m $modelo -c model_reasoning_effort=$esfuerzo --sandbox workspace-write --ask-for-approval never) ;;
+    # --no-daemon: sin él, los comandos de Codex corren fuera de hc. --no-alt-screen: la respuesta queda
+    # junto al prompt y no 100 filas más arriba, que en el teléfono no se ve. El esfuerzo va siempre: el default es none.
+    cmd=(codex --no-daemon --no-alt-screen -m $modelo -c model_reasoning_effort=$esfuerzo --sandbox workspace-write --ask-for-approval never) ;;
   *) die "asiento desconocido '$asiento' (ccp, ccw o codex)" ;;
 esac
 
@@ -50,6 +59,7 @@ while [[ $nombre == *- ]] nombre=${nombre%-}
 etiquetas=(--label flota.producto=$producto --label flota.rol=$rol --label flota.asiento=$asiento)
 [[ -n $padre ]] && etiquetas+=(--label flota.padre=$padre)
 [[ -n $tarea ]] && etiquetas+=(--label flota.tarea=$tarea)
+[[ -n $espacio ]] && etiquetas+=(--label herdr.space=$espacio)  # la app le abre una pestaña
 # Si el padre es un terminal vivo, hc le avisa cuando el hijo se bloquea o termina.
 par=(); [[ -n $padre ]] && hc get $padre >/dev/null 2>&1 && par=(--parent $padre)
 
@@ -81,6 +91,12 @@ while (( SECONDS < fin )); do
   hc wait $t --timeout 2 >/dev/null 2>&1  # despierta antes si cambia su estado
 done
 (( listo )) || { print -u2 -- "$pantalla"; die "$t no quedó listo en ${FLOTA_ARRANQUE_S:-120} s (sigue vivo: hc attach $t)" }
+
+# La app llama a la pestaña por su número: se le pone el nombre corto, que es lo que se lee en el teléfono.
+if [[ -n $espacio ]]; then
+  tab=$(herdr-app ls 2>/dev/null | jq -r --arg t $t '[.spaces[].tabs[] | select(any(.terminals[]?; .terminal == $t)) | .id][0] // empty')
+  [[ -n $tab ]] && herdr-app do tab.rename --id $tab --name $nombre >/dev/null 2>&1 || aviso "no pude nombrar su pestaña (¿la app está abierta?)"
+fi
 
 # El encargo va como puntero a un archivo: un texto largo pegado puede quedar sin enviar.
 if [[ -n $encargo ]]; then
