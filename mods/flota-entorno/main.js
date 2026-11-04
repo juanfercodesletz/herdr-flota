@@ -73,15 +73,15 @@ export default class Entorno extends View {
       .child(div().h(3).rounded(2).w(`${clamp(n)}%`).bg(tone(n, c)))
       .when(c < 100, (el) => el.child(div().absolute().top(-2).left(`${c}%`).w(1).h(7).bg(t.foreground).opacity(0.5)));
     const lbl = (s) => div().text_size(10.5).text_color(t.dim).child(s.toUpperCase());
-    const head2 = (left, right) => h_flex().child(div().flex_1().child(lbl(left))).child(div().w(90).flex().justify_end().child(lbl(right)));
+    const head2 = (left, right) => h_flex().child(div().flex_1().child(lbl(left))).child(div().w(90).flex().justify_end().child(lbl(right))).child(div().w(58));
 
-    // Una sola forma de fila para todo el panel: nombre, valor, dato gris a la derecha, barra
+    // Una sola forma de fila para todo el panel: nombre, dato gris, valor al final, barra
     // a todo el ancho y, si hace falta, una nota chica debajo.
     const row = (k, pct, c, val, right, note) => v_flex().gap(4)
       .child(h_flex().items_baseline()
         .child(div().flex_1().text_size(12.5).text_color(t.foreground).child(k))
-        .child(div().text_size(12).text_color(tone(pct, c)).child(val))
-        .child(div().w(90).flex().justify_end().text_size(11).text_color(t.dim).child(right)))
+        .child(div().w(90).flex().justify_end().text_size(11).text_color(t.dim).child(right))
+        .child(div().w(58).flex().justify_end().text_size(12).text_color(tone(pct, c)).child(val)))
       .child(bar(pct ?? 0, c))
       .when(Boolean(note), (el) => el.child(div().text_size(10.5).text_color(t.dim).child(note)));
 
