@@ -57,7 +57,7 @@ function Arbol({ onClose }: { onClose: () => void }) {
       abrir: ir(() => { openTask(t.id); if (t.agent) openItem('terminal') }),
     }))
     const pestanas = (p.tabs ?? []).filter((tb) => tb.cli && tb.state).map((tb): Sesion => ({
-      clave: tb.term, ref: '', titulo: tb.name, sub: tb.prog ?? '', estado: estado(tb.state) as Estado, alias: '',
+      clave: tb.term, ref: '', titulo: tb.name, sub: tb.prog && tb.prog !== tb.name ? tb.prog : '', estado: estado(tb.state) as Estado, alias: '',
       abrir: ir(() => { goPlace(p.id); setUI({ term: tb.term }) }),
     }))
     const sesiones: Sesion[] = ordenar([...tareas, ...pestanas])
@@ -116,7 +116,7 @@ function Arbol({ onClose }: { onClose: () => void }) {
                               <span className={clsx('size-2 shrink-0 rounded-full', DOT[x.estado])} />
                               <span className="flex min-w-0 flex-1 flex-col">
                                 <span className="truncate text-[0.875rem] phone:text-[0.9375rem]">
-                                  {x.ref ? <span className="mr-1.5 text-fg3 tabular-nums">{x.ref}</span> : null}
+                                  {x.ref ? <span className="mr-1.5 text-fg3">{x.ref}</span> : null}
                                   {x.titulo}
                                 </span>
                                 {x.sub ? <span className="truncate text-[0.75rem] text-fg3 phone:text-[0.8125rem]">{x.sub}</span> : null}
