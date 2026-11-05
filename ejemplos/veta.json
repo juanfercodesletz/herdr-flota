@@ -46,5 +46,15 @@
     { "id": "86e3z0s58", "titulo": "Guardar el código 58 de Siigo", "estado": "bloqueada", "link": "https://app.clickup.com/t/86e3z0s58", "sesion": "autor-86e3z0s58" },
     { "id": "86e3z0blk", "titulo": "Reporte de causaciones de octubre para Belkis", "estado": "PR abierto", "link": "https://app.clickup.com/t/86e3z0blk", "sesion": "autor-86e3z0blk" },
     { "id": "86e3z0aln", "titulo": "Reintento de envío a Alanube", "estado": "en cola", "link": "https://app.clickup.com/t/86e3z0aln" }
+  ],
+  "decisiones": [
+    { "id": "D7", "pregunta": "¿Libra-500g sale hoy a las 19:00?", "opciones": ["Hoy", "Mañana"], "recomendada": "Mañana",
+      "de": "TPM", "contexto": "el tester aún no termina", "estado": "abierta" },
+    { "id": "D9", "pregunta": "¿Revertir la migración 0142 o parchear el esquema?", "opciones": ["Revertir", "Parchear"],
+      "recomendada": "Revertir", "de": "gate-esquema-dbos", "tarea": "86e3yk0t9", "contexto": "revertir son 10 min",
+      "frena": true, "estado": "abierta" },
+    { "id": "D5", "pregunta": "¿Qué ventana de OC usa «Refrescar»?", "opciones": ["60 días", "90 días", "Sin límite"],
+      "recomendada": "90 días", "de": "s22b-refrescar", "tarea": "86e3yk0t6", "contexto": "el buscador mira 60 días",
+      "estado": "respondida", "respuesta": "90 días" }
   ]
 }

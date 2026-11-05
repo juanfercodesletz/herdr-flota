@@ -47,7 +47,8 @@ EOF
 # con el mismo cálculo que el mod. Los datos son la foto que escribe el mod en ~/.herdr/flota/web/entorno.json;
 # un servidor local la sirve y Tailscale la publica en /flota del mismo tailnet (la app de Tailscale en macOS no
 # puede servir una carpeta). `shepherdr update` reconstruye la web solo si el plugin cambió.
-# Iniciativas igual, con iniciativas.js y la foto iniciativas.json.
+# Iniciativas igual, con iniciativas.js y la foto iniciativas.json. El mismo servidor (respuestas.py) recibe las
+# respuestas a las Decisiones que se tocan en la web (POST /flota/respuesta).
 for p in flota-entorno:calc.js flota-iniciativas:iniciativas.js flota-arbol:arbol.js; do
   name=${p%%:*} js=${p#*:} plug="${SHEPHERDR_HOME:-$HOME/.shepherdr}/plugins/$name"
   mkdir -p "$plug" && rsync -a --delete --exclude "*.js" "$here/web/$name/" "$plug/" && rsync -a "$here/mods/$name/$js" "$plug/"
@@ -63,8 +64,8 @@ if [ "$(uname)" = Darwin ]; then
 <plist version="1.0"><dict>
   <key>Label</key><string>dev.herdr-flota.web</string>
   <key>ProgramArguments</key><array>
-    <string>$(command -v python3)</string><string>-m</string><string>http.server</string><string>7790</string>
-    <string>--bind</string><string>127.0.0.1</string><string>--directory</string><string>$HOME/.herdr/flota/web</string>
+    <string>$(command -v python3)</string><string>$app/mods/flota-iniciativas/respuestas.py</string><string>servir</string>
+    <string>7790</string><string>$HOME/.herdr/flota/web</string>
   </array>
   <key>RunAtLoad</key><true/><key>KeepAlive</key><true/>
   <key>StandardErrorPath</key><string>/dev/null</string>

@@ -1,7 +1,7 @@
 // node shell/prueba-iniciativas.mjs: el lector de ~/.herdr/flota/<producto>.json con el ejemplo y con archivos malos.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { leer, avance, tono, tablero, gantt, ahora, chip, tonoChip, ordenar, esperan } from "../mods/flota-iniciativas/iniciativas.js";
+import { leer, avance, tono, tablero, gantt, ahora, chip, tonoChip, ordenar, esperan, abiertas } from "../mods/flota-iniciativas/iniciativas.js";
 
 const ej = leer("veta.json", readFileSync(new URL("../ejemplos/veta.json", import.meta.url), "utf8"));
 assert.equal(ej.error, undefined);
@@ -18,7 +18,7 @@ assert.equal(leer("x.json", null).error, "x.json: no se pudo leer");
 assert.equal(leer("x.json", "{}").error, 'x.json: falta "producto"');
 assert.match(leer("x.json", '{"producto":"P","epicas":{}}').error, /listas/);
 assert.match(leer("x.json", '{"producto":"P","sueltas":[{"id":"a1"}]}').error, /sin "titulo" \(a1\)/);
-assert.deepEqual(leer("x.json", '{"producto":"P"}'), { archivo: "x.json", producto: "P", epicas: [], sueltas: [] });
+assert.deepEqual(leer("x.json", '{"producto":"P"}'), { archivo: "x.json", producto: "P", epicas: [], sueltas: [], decisiones: [] });
 
 // Orden por lo que pide acción: tareas bloqueada → PR → auditoría → en curso (y lo raro) → en cola → merged, estable.
 assert.deepEqual(ej.epicas[0].tareas.map((t) => t.id.slice(-2)), ["t5", "t9", "ta", "t4", "t6", "tb", "tc", "t1", "t2", "t3"]);
@@ -60,4 +60,20 @@ assert.equal(gantt(leer("x.json", '{"producto":"P","sueltas":[{"titulo":"a","sal
 // Hora de Bogotá: 2026-11-04 19:30 UTC son las 14:30 allá; a las 03:00 queda fuera del eje.
 assert.equal(ahora(Date.UTC(2026, 10, 4, 19, 30) / 1000), 14.5);
 assert.equal(ahora(Date.UTC(2026, 10, 4, 8, 0) / 1000), null);
+
+// Decisiones: abiertas primero (las que frenan antes), luego respondidas y cerradas; la respuesta dada en Herdr encima.
+assert.deepEqual(ej.decisiones.map((d) => [d.id, d.estado]), [["D9", "abierta"], ["D7", "abierta"], ["D5", "respondida"]]);
+assert.equal(abiertas(ej), 2);
+const veta = readFileSync(new URL("../ejemplos/veta.json", import.meta.url), "utf8");
+const conMia = leer("veta.json", veta, JSON.stringify({ D7: { respuesta: "Hoy", at: 1, desde: "web" }, D9: { respuesta: "otra cosa" } }));
+assert.deepEqual(conMia.decisiones.map((d) => [d.id, d.estado, d.respuesta]), [["D9", "abierta", ""], ["D7", "respondida", "Hoy"], ["D5", "respondida", "90 días"]]);
+assert.equal(abiertas(conMia), 1);
+assert.equal(leer("veta.json", veta, "{ roto").decisiones.length, 3); // respuestas rotas: se ignoran
+const D = (x) => leer("x.json", JSON.stringify({ producto: "P", decisiones: x }));
+assert.match(D({}).error, /"decisiones" va como lista/);
+assert.match(D([{ id: "D1" }]).error, /sin "id" o sin "pregunta" \(D1\)/);
+assert.deepEqual(D([{ id: 3, pregunta: "¿?", estado: "raro" }]).decisiones[0], { id: "3", pregunta: "¿?", opciones: [], recomendada: "", contexto: "", de: "", tarea: "", frena: false, estado: "abierta", respuesta: "" });
+// Una cerrada no cambia con lo de Herdr.
+assert.equal(leer("x.json", JSON.stringify({ producto: "P", decisiones: [{ id: "a", pregunta: "¿?", opciones: ["Sí", "No"], estado: "cerrada", respuesta: "No" }] }),
+  JSON.stringify({ a: { respuesta: "Sí" } })).decisiones[0].respuesta, "No");
 console.log("ok");
