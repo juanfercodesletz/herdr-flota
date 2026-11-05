@@ -13,3 +13,4 @@
 - Referencia un espacio por su id (spaces[].id en `herdr-app ls`; `herdr.coordinator.space` en un Assistant), nunca por su nombre: Juan los renombra.
 - Las secciones de la barra lateral viven en el documento compartido spaces-chat: no edites ~/.config/herdr-app/shared.json; créalas desde el + de Spaces (app o web).
 - `install.sh` desde un worktree apunta los servicios launchd (vigía, reanudar) a esa carpeta. Para instalar solo un mod y su plugin web: rsync del mod y del plugin como hace install.sh, y luego `shepherdr update --yes --keys keep` (prueba antes con --dry-run).
+- macOS no deja ver con `ps eww` el entorno de binarios del sistema (/bin/sh): para probar la lectura de CLAUDE_CONFIG_DIR de un proceso usa python3 o node, no sh.
