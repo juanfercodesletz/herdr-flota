@@ -6,7 +6,7 @@
 // del Gantt; un clic en una opción la guarda en ~/.herdr/flota/respuestas/<archivo> (respuestas.py), y el TPM la recoge.
 // Vive en el panel de la derecha (el de Tasks y Files); con props {boton: true} es el botón de la barra
 // de arriba que lo abre y lo cierra, como los de Tasks y Files.
-// Muestra los productos del espacio abierto (su campo `espacios`); Home, todos. Cambia con el espacio, sin esperar
+// Muestra los productos del espacio abierto (su id en el campo `espacios`); Home, todos. Cambia con el espacio, sin esperar
 // la siguiente lectura: spaces() hace que el mod se vuelva a dibujar.
 import { View, div, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
@@ -75,7 +75,7 @@ export default class Iniciativas extends View {
         .when(Boolean(alerta), (el) => el.child(div().min_w(0).text_color(t.blocked).truncate().child(`· ${alerta}`))));
 
     const abierto = spaces().find((s) => s.active);
-    const vistos = delEspacio(this.productos || [], abierto && { nombre: abierto.name, home: esHome(abierto.folder) });
+    const vistos = delEspacio(this.productos || [], abierto && { id: abierto.id, home: esHome(abierto.folder) });
     const lista = [];
     let sel = null;
     for (const p of vistos) {
@@ -83,6 +83,7 @@ export default class Iniciativas extends View {
       lista.push(h_flex().pt(10).pb(4).gap(8).items_baseline()
         .child(div().text_size(10.5).text_color(t.dim).child(p.producto.toUpperCase()))
         .child(div().text_size(10.5).text_color(t.dim).child(`el TPM lo escribió ${hace(p.at)}`)));
+      if (p.aviso) lista.push(div().pb(4).text_size(12).text_color(t.blocked).child(p.aviso));
       if (this.vista === "tablero") { lista.push(this.tablero(p, t, color, punto)); continue; }
       if (this.vista === "gantt") { lista.push(...this.gantt(p, t, color)); continue; }
       if (this.vista === "decisiones") { lista.push(...this.decisiones(p, t)); continue; }

@@ -119,7 +119,7 @@ Ejemplo completo: `ejemplos/veta.json`.
 ```json
 {
   "producto": "Veta",
-  "espacios": ["Backend & Web", "veta-frontend"],
+  "espacios": [{ "id": "spb83c5f1d4731ea1f84df503dfb0f14eb", "nombre": "Backend & Web" }],
   "epicas": [
     { "id": "86e3yj2qg", "titulo": "Órdenes de compra en causaciones", "estado": "a tiempo",
       "link": "https://app.clickup.com/t/86e3yj2qg",
@@ -132,10 +132,15 @@ Ejemplo completo: `ejemplos/veta.json`.
 ```
 
 - `producto` y `titulo` son obligatorios; lo demás puede faltar. Títulos en lenguaje de producto.
-- `espacios`: los nombres de los espacios de Shepherdr donde se ve el producto (como salen en la barra lateral; sin
-  distinguir mayúsculas). Lo pone el TPM. El panel muestra solo los productos del espacio abierto (en el teléfono, el del
-  cajón) y cambia al cambiar de espacio; **Home** (el espacio de la carpeta de inicio, `~`) los ve todos. Sin `espacios`,
-  el producto solo se ve en Home. Un espacio sin productos dice «Este espacio no tiene iniciativas».
+- `espacios`: los **ids** de los espacios de Shepherdr donde se ve el producto, nunca sus nombres (Juan los renombra).
+  Cada uno, `"sp…"` o `{ "id": "sp…", "nombre": "…" }`; el nombre es solo para leerlo a ojo y no se compara. El id sale en
+  `herdr-app ls` (`spaces[].id`) o, desde un terminal del espacio, en `hc get $HC_TERMINAL_ID --json` (etiqueta
+  `herdr.coordinator.space` en un Assistant, `herdr.space` en una pestaña, `herdr.task.space` en un agente de tarea). No cambia al renombrar el espacio ni al reiniciar la app o
+  herdr-core (se guarda en el documento `herdr-app` del core); un espacio cerrado y vuelto a crear sí trae id nuevo.
+  Lo pone el TPM. El panel muestra solo los productos del espacio abierto (en el teléfono, el del cajón) y cambia al
+  cambiar de espacio; **Home** (el espacio de la carpeta de inicio, `~`) los ve todos. Sin `espacios`, el producto solo
+  se ve en Home. Un espacio sin productos dice «Este espacio no tiene iniciativas». Un nombre en `espacios` (archivo
+  viejo) no se adivina: el panel lo dice en una línea.
 - `id`: el de ClickUp. Es el que va en `flota-lanzar --tarea`, así la sesión lleva `flota.tarea=<id>`.
 - `sesion`: el nombre del terminal en hc que la trabaja, solo mientras la hay.
 - Estado de tarea: `en cola`, `en curso`, `auditoría`, `PR abierto`, `bloqueada` o `merged` (cada uno con su color
@@ -245,7 +250,7 @@ bin/flota-lanzar --asiento ccw --producto english-learning --rol autor --tarea E
 - **Encargo:** `--encargo "<texto>"` (se guarda en `~/.herdr/flota/encargos/<nombre>.md`) o
   `--encargo-archivo <ruta>`. Se manda un puntero al archivo cuando el agente está libre, y se comprueba
   que el turno arrancó.
-- **Espacio:** `--espacio <nombre|id>` lo pone como pestaña de ese espacio de la app, con su nombre corto,
+- **Espacio:** `--espacio <id|nombre>` lo pone como pestaña de ese espacio de la app, con su nombre corto,
   y así se ve y se maneja desde la web del iPhone. Por defecto va al espacio de quien lo lanza, si tiene uno;
   si no, queda oculto (solo en `hc ls`).
 - Imprime la dirección del terminal (`t7`): `hc get t7`, `hc read t7`, `hc attach t7`.
