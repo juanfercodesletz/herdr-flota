@@ -14,3 +14,8 @@
 - Las secciones de la barra lateral viven en el documento compartido spaces-chat: no edites ~/.config/herdr-app/shared.json; créalas desde el + de Spaces (app o web).
 - `install.sh` desde un worktree apunta los servicios launchd (vigía, reanudar) a esa carpeta. Para instalar solo un mod y su plugin web: rsync del mod y del plugin como hace install.sh, y luego `shepherdr update --yes --keys keep` (prueba antes con --dry-run).
 - macOS no deja ver con `ps eww` el entorno de binarios del sistema (/bin/sh): para probar la lectura de CLAUDE_CONFIG_DIR de un proceso usa python3 o node, no sh.
+- Prueba del doctor: `python3 shell/prueba-doctor.py` (HOME falso en /tmp, hc/herdr-app/launchctl falsos en el PATH; ~15 s).
+- `~/.claude/skills/iniciativas-flota` es un enlace a la de `~/.claude-work`: edita una sola.
+- Prueba del hook de credenciales: `zsh shell/prueba-credenciales.zsh` (HOME falso; corre install.sh entero con uname, tailscale y shepherdr de mentira, así que no toca servicios). Para una sesión real sin tocar los perfiles: `claude -p --settings ‹json con el hook›`.
+- Para la web con datos de prueba: un vite.config extra en la copia de shepherdr/web con un middleware que sirve /flota/entorno.json desde un archivo, y /api con proxy al tailnet (/shepherdr + cabecera origin).
+- Prueba del chip de perfil: `bun shell/prueba-chip.mjs` (React real en Chrome con reloj falso de Playwright, ~8 s). Para abrir un espacio en la web de prueba: ?place=‹id del espacio›.
