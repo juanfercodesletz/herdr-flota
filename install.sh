@@ -37,6 +37,46 @@ json.dump(d, open(f"{app}/layouts/flota.json", "w"), indent=2, ensure_ascii=Fals
 print("  layout  flota")
 EOF
 
+# Hook de credenciales: PreToolUse en los dos perfiles de Claude y en Codex. Idempotente: si ya está igual no toca
+# el archivo; si apunta a otra carpeta (otro worktree) lo cambia en su sitio. Copia el archivo antes de escribirlo.
+python3 - "$here/shell/hooks/credenciales.py" <<'EOF'
+import json, os, shutil, sys
+cmd = f"python3 -I -S '{sys.argv[1]}'"
+H = os.path.expanduser("~")
+claude = "Read|Edit|MultiEdit|Write|NotebookEdit|Grep|Glob|Bash"
+for f, matcher in ((f"{H}/.claude/settings.json", claude), (f"{H}/.claude-work/settings.json", claude),
+                   (f"{H}/.codex/hooks.json", "Bash|apply_patch")):
+    if not os.path.isdir(os.path.dirname(f)):
+        continue
+    try:
+        d = json.load(open(f)) if os.path.exists(f) else {}
+    except ValueError:
+        print(f"  hook    credenciales: {f} no es JSON válido; no lo toco", file=sys.stderr)
+        continue
+    pre = d.setdefault("hooks", {}).setdefault("PreToolUse", [])
+    nuevo = {"matcher": matcher, "hooks": [{"type": "command", "command": cmd, "timeout": 10}]}
+    mios = [i for i, e in enumerate(pre) if any("shell/hooks/credenciales.py" in (h.get("command") or "") for h in e.get("hooks", []))]
+    if [pre[i] for i in mios] == [nuevo]:
+        print(f"  hook    credenciales ya está en {f}")
+        continue
+    if mios:
+        pre[mios[0]] = nuevo
+        for i in reversed(mios[1:]):
+            del pre[i]
+    else:
+        pre.append(nuevo)
+    if os.path.exists(f):
+        shutil.copy2(f, f + ".bak-credenciales")
+    tmp = f"{f}.{os.getpid()}"
+    with open(tmp, "w") as o:
+        json.dump(d, o, indent=2, ensure_ascii=False)
+        o.write("\n")
+    if os.path.exists(f):
+        shutil.copymode(f, tmp)
+    os.replace(tmp, f)
+    print(f"  hook    credenciales en {f}" + ("  (en Codex: confíalo una vez con /hooks)" if "codex" in f else ""))
+EOF
+
 # Entorno en la web de Shepherdr: el plugin va a ~/.shepherdr/plugins (Shepherdr lo copia en cada build de su web),
 # con el mismo cálculo que el mod. Los datos son la foto que escribe el mod en ~/.herdr/flota/web/entorno.json;
 # un servidor local la sirve y Tailscale la publica en /flota del mismo tailnet (la app de Tailscale en macOS no
