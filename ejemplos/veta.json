@@ -1,5 +1,6 @@
 {
   "producto": "Veta",
+  "espacios": ["Backend & Web", "veta-frontend"],
   "epicas": [
     {
       "id": "86e3yj2qg",

@@ -17,23 +17,39 @@ const porClave = (k) => (a, b) => { const x = k(a), y = k(b); return x[0] - y[0]
 const urgente = (p) => !p.error && [...p.epicas.flatMap((e) => e.tareas), ...p.sueltas].some((t) => rango(t.estado) <= 1);
 export const ordenar = (productos) => [...productos].sort(porClave((p) => [urgente(p) ? 0 : 1, 0]));
 
+// Por espacio: cada producto dice en `espacios` los nombres de los espacios de Shepherdr donde se ve. Home ve todos;
+// un producto sin `espacios` solo se ve en Home. espacio: { nombre, home } del espacio abierto; null: todos.
+export function delEspacio(productos, espacio) {
+  if (!espacio || espacio.home) return productos;
+  const n = espacio.nombre.toLowerCase();
+  return productos.filter((p) => p.espacios?.some((e) => e.toLowerCase() === n));
+}
+// Home, como lo distingue Shepherdr: el espacio en la carpeta de inicio de su máquina, no su nombre. Vale la carpeta
+// del escritorio ("" = la de su máquina, /Users/<u>, /home/<u>, /root) y la de la web ("~").
+export const esHome = (carpeta) => !carpeta || carpeta === "~" || /^\/(home\/[^/]+|Users\/[^/]+|root)\/?$/.test(carpeta);
+export const SIN_INICIATIVAS = "Este espacio no tiene iniciativas";
+
 // archivo: el nombre (veta.json); texto: su contenido, o null si no se pudo leer; respuestas: el texto de
 // ~/.herdr/flota/respuestas/<archivo> (lo que Juan respondió en Herdr), o null.
-// Devuelve { archivo, producto, epicas, sueltas, decisiones } o { archivo, error } con el aviso en una línea.
+// Devuelve { archivo, producto, espacios, epicas, sueltas, decisiones } o { archivo, espacios?, error } con el aviso en una línea.
 export function leer(archivo, texto, respuestas = null) {
   if (texto == null) return { archivo, error: `${archivo}: no se pudo leer` };
   let d;
   try { d = JSON.parse(texto); } catch { return { archivo, error: `${archivo}: no es JSON válido` }; }
-  if (!d || typeof d !== "object" || typeof d.producto !== "string" || !d.producto) return { archivo, error: `${archivo}: falta "producto"` };
+  // Un archivo que se lee pero está mal sigue en sus espacios; uno que ni se lee, solo en Home.
+  const espacios = Array.isArray(d?.espacios) ? d.espacios.filter((e) => typeof e === "string" && e) : [];
+  const mal = (m) => ({ archivo, espacios, error: `${archivo}: ${m}` });
+  if (!d || typeof d !== "object" || typeof d.producto !== "string" || !d.producto) return mal(`falta "producto"`);
+  if (d.espacios != null && !Array.isArray(d.espacios)) return mal('"espacios" va como lista de nombres de espacio');
   const epicas = d.epicas ?? [], sueltas = d.sueltas ?? [];
-  if (!Array.isArray(epicas) || !Array.isArray(sueltas)) return { archivo, error: `${archivo}: "epicas" y "sueltas" van como listas` };
-  for (const e of epicas) if (!Array.isArray(e?.tareas ?? [])) return { archivo, error: `${archivo}: las "tareas" de una épica van como lista` };
+  if (!Array.isArray(epicas) || !Array.isArray(sueltas)) return mal(`"epicas" y "sueltas" van como listas`);
+  for (const e of epicas) if (!Array.isArray(e?.tareas ?? [])) return mal(`las "tareas" de una épica van como lista`);
   const malo = [...epicas, ...epicas.flatMap((e) => e?.tareas ?? []), ...sueltas].find((x) => !x || typeof x.titulo !== "string" || !x.titulo);
-  if (malo !== undefined) return { archivo, error: `${archivo}: hay una épica o tarea sin "titulo"${malo?.id ? ` (${malo.id})` : ""}` };
+  if (malo !== undefined) return mal(`hay una épica o tarea sin "titulo"${malo?.id ? ` (${malo.id})` : ""}`);
   const decs = d.decisiones ?? [];
-  if (!Array.isArray(decs)) return { archivo, error: `${archivo}: "decisiones" va como lista` };
+  if (!Array.isArray(decs)) return mal(`"decisiones" va como lista`);
   const mala = decs.find((x) => !x || !str(x.id) || typeof x.pregunta !== "string" || !x.pregunta);
-  if (mala !== undefined) return { archivo, error: `${archivo}: hay una decisión sin "id" o sin "pregunta"${mala?.id ? ` (${mala.id})` : ""}` };
+  if (mala !== undefined) return mal(`hay una decisión sin "id" o sin "pregunta"${mala?.id ? ` (${mala.id})` : ""}`);
   const tarea = (t) => ({
     id: str(t.id), titulo: t.titulo, estado: str(t.estado) || "en cola", link: str(t.link), sesion: str(t.sesion),
     // Opcionales, solo para el Gantt (README, «Gantt»).
@@ -43,6 +59,7 @@ export function leer(archivo, texto, respuestas = null) {
   return {
     archivo,
     producto: d.producto,
+    espacios,
     epicas: epicas.map((e) => ({ id: str(e.id), titulo: e.titulo, estado: str(e.estado), link: str(e.link), tareas: ordenTareas((e.tareas ?? []).map(tarea)) }))
       .sort(porClave(clave)),
     sueltas: ordenTareas(sueltas.map(tarea)),

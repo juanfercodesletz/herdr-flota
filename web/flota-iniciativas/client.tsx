@@ -5,12 +5,13 @@
 // estado) y Gantt (el plan del día por salida a producción) con la misma foto; en el teléfono, todo a lo alto.
 // Pestaña Decisiones: las preguntas que el TPM copia de la base del Gantt; tocar una opción la manda a /flota/respuesta
 // (mods/flota-iniciativas/respuestas.py), que la guarda en ~/.herdr/flota/respuestas/<archivo> para el TPM.
+// Muestra los productos del espacio abierto (en el teléfono, el del cajón) según su campo `espacios`; Home, todos.
 import clsx from 'clsx'
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { definePlugin } from '@client/kernel.ts'
+import { definePlugin, placeOf, useSnap, useUI } from '@client/kernel.ts'
 import { Tab, Tabs } from '@client/ui.tsx'
-import { ahora, avance, chip, cuantas, esperan, gantt, hace, pos, SALIDAS, SIN_ARCHIVO, SIN_PLAN, tablero, tono, tonoChip } from './iniciativas.js'
+import { ahora, avance, chip, cuantas, esperan, gantt, hace, pos, SALIDAS, SIN_ARCHIVO, SIN_INICIATIVAS, SIN_PLAN, delEspacio, esHome, tablero, tono, tonoChip } from './iniciativas.js'
 
 interface Tarea {
   id: string; titulo: string; estado: string; link: string; sesion: string
@@ -22,10 +23,11 @@ interface Decision {
   id: string; pregunta: string; opciones: string[]; recomendada: string; contexto: string; de: string; tarea: string
   frena: boolean; estado: 'abierta' | 'respondida' | 'cerrada'; respuesta: string
 }
-type Producto = { archivo: string; at: number; error?: string; producto: string; epicas: Epica[]; sueltas: Tarea[]; decisiones?: Decision[] }
+type Producto = { archivo: string; at: number; error?: string; producto: string; espacios?: string[]; epicas: Epica[]; sueltas: Tarea[]; decisiones?: Decision[] }
 /** lo que Juan tocó en esta página, por "<archivo>#<id>", hasta que la foto del escritorio lo traiga */
 type Mias = Record<string, { respuesta: string; error?: string; guardando?: boolean }>
-interface Foto { at: number; productos: Producto[] }
+/** total: cuántos productos hay en todos los espacios (los de `productos` son los del espacio abierto) */
+interface Foto { at: number; productos: Producto[]; total?: number }
 
 // Los tonos del escritorio: verde lo mergeado, azul con PR, rojo lo bloqueado, gris lo demás.
 const DOT: Record<string, string> = { hecha: 'bg-ready', pr: 'bg-focus', bloqueada: 'bg-need', curso: 'bg-fg2', cola: 'bg-line2', riesgo: 'bg-work', espera: 'bg-merged' }
@@ -331,7 +333,8 @@ function Panel({ foto, onClose, mias, setMias }: { foto: Foto | null | 'error'; 
           {foto === 'error' ? <p className="px-2 py-2 text-[0.875rem] text-fg2">Sin datos: /flota no responde en este Mac.</p> : null}
           {foto === null ? <p className="px-2 py-2 text-[0.875rem] text-fg3">Leyendo…</p> : null}
           {ok && now - ok.at > 120 ? <p className="mx-2 mb-2 rounded-lg bg-well px-3 py-2 text-[0.8125rem] text-work-fg">Dato de {hace(ok.at, now)}: el panel del escritorio no está abierto.</p> : null}
-          {ok && ok.productos.length === 0 ? <p className="px-2 py-2 text-[0.875rem] text-fg2">{SIN_ARCHIVO}</p> : null}
+          {ok && !ok.total ? <p className="px-2 py-2 text-[0.875rem] text-fg2">{SIN_ARCHIVO}</p> : null}
+          {ok && ok.total && !ok.productos.length ? <p className="px-2 py-2 text-[0.875rem] text-fg2">{SIN_INICIATIVAS}</p> : null}
           {ok?.productos.map((p) =>
             p.error ? (
               <p key={p.archivo} className="px-2 py-2 text-[0.875rem] text-need-fg">{p.error}</p>
@@ -378,10 +381,21 @@ function Panel({ foto, onClose, mias, setMias }: { foto: Foto | null | 'error'; 
 
 // Una fila arriba de la lista de espacios (barra lateral y cajón del teléfono): el pie ya va lleno con Shepherdr,
 // Entorno y Add machine.
+// La foto con solo los productos del espacio abierto. Home (Shepherdr lo marca por su carpeta: `home`, o «~» en
+// `where`) ve todos. Sigue a ui.place: al cambiar de espacio cambia en el acto, sin esperar la siguiente lectura.
+function useDelEspacio(foto: Foto | null | 'error'): Foto | null | 'error' {
+  const place = useUI((u) => u.place)
+  const snap = useSnap()
+  if (!foto || foto === 'error') return foto
+  const p = snap ? placeOf(snap, place) : null
+  const espacio = p ? { nombre: p.name, home: Boolean(p.home) || (p.where !== undefined && esHome(p.where)) } : null
+  return { ...foto, productos: delEspacio(foto.productos, espacio), total: foto.productos.length }
+}
+
 function Abridor() {
   const [open, setOpen] = useState(false)
   const [mias, setMias] = useState<Mias>({})
-  const foto = useFoto()
+  const foto = useDelEspacio(useFoto())
   const pendientes = foto && foto !== 'error' ? foto.productos.reduce((n, p) => n + abiertasDe(p, mias), 0) : 0
   // un punto rojo si hay tareas bloqueadas
   const bloqueadas = foto && foto !== 'error' && foto.productos.some((p) => !p.error && [...p.epicas.flatMap((e) => e.tareas), ...p.sueltas].some((t) => tono(t.estado) === 'bloqueada'))
