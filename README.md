@@ -32,7 +32,8 @@ Diseño (canvas): https://claude.ai/artifact/5rVDW3BgbwVmEpvcSkQ9Lj — ronda 3 
 
 Herdr no puede leer la base de datos de un artefacto (verificado el 4-nov-2026: `claude -p`
 no tiene ArtifactData y no hay API pública). Por eso el TPM es el puente: en cada tick escribe
-`~/.herdr/flota/<producto>.json` y recoge las respuestas que se den en Herdr.
+`~/.herdr/flota/<producto>.json` (con las decisiones abiertas) y recoge las respuestas que se den en Herdr, que
+quedan aparte en `~/.herdr/flota/respuestas/<producto>.json` (ver «Decisiones»).
 
 ## Plan, paso a paso
 
@@ -43,7 +44,7 @@ no tiene ArtifactData y no hay API pública). Por eso el TPM es el puente: en ca
 3. Árbol de productos. ✓
 4. Entorno. ✓ (primero, por ser independiente del resto)
 5. Iniciativas, desde el archivo que escribe el TPM. ✓
-6. Decisiones, con el puente del TPM.
+6. Decisiones, con el puente del TPM. ✓
 7. Tablero y Gantt. ✓
 
 Cada paso se prueba en la app antes de seguir (`herdr-app check`, `herdr-app shot`).
@@ -176,6 +177,47 @@ de ese producto dice en una línea que no hay plan del día. Solo entran al Gant
 - `ritmo`: el chip de una palabra, `a tiempo`, `en riesgo`, `atrasado` o `te espera`. Sin él, el chip es el estado
   (`listo` si está `merged`).
 - `nota`: una línea corta (número de PR y lo que sigue). `equipo`: `AI`, `Backend`, `Frontend`, `Acciones`, `DevOps`…
+
+### Decisiones
+
+Cuarta pestaña del panel (app y web), con el número de las abiertas. Las decisiones viven en la base del artefacto del
+Gantt (colección `decisiones`, skill `gantt-flota`), que Herdr no lee: el TPM copia en cada tick las abiertas al
+`<producto>.json`, en el campo opcional `decisiones`:
+
+```json
+"decisiones": [
+  { "id": "D5", "pregunta": "¿Qué ventana de OC usa «Refrescar»?", "opciones": ["60 días", "90 días", "Sin límite"],
+    "recomendada": "90 días", "de": "s22b-refrescar", "tarea": "86e3yk0t6", "contexto": "el buscador mira 60 días",
+    "frena": false, "estado": "abierta", "respuesta": "" }
+]
+```
+
+- `id` (el del documento en la base del Gantt) y `pregunta` (su `titulo`) son obligatorios; lo demás puede faltar.
+- `opciones`: los botones; `recomendada` (una de ellas) lleva ★. Sin opciones, la tarjeta dice que se responde en el Gantt.
+- `de`: quién pregunta (el terminal o «TPM»); `tarea`: el id de la tarea a la que toca; `contexto`: una frase.
+- `frena: true` si para una salida o una tarea: borde rojo y va primero.
+- `estado`: `abierta`, `respondida` (Juan respondió en la página del Gantt; `respuesta` dice qué) o `cerrada`.
+
+Juan responde con un toque en una opción, en la app o en el teléfono, y puede cambiarla mientras el TPM no la cierre.
+La respuesta **no** va al `<producto>.json` (que es del TPM) sino a `~/.herdr/flota/respuestas/<producto>.json`, cuyo
+único escritor es `mods/flota-iniciativas/respuestas.py` (la app lo llama; la web le manda `POST /flota/respuesta`):
+
+```json
+{ "D5": { "respuesta": "90 días", "at": 1793840000, "desde": "web" } }
+```
+
+Solo guarda una de las `opciones` de una decisión que siga en el `<producto>.json` y no esté cerrada. El mismo
+`respuestas.py servir` es el servicio `dev.herdr-flota.web` (sirve la foto de `/flota` como antes); para escribir pide
+la cabecera `X-Flota: 1` y, por el tailnet, el origen de la página y el login de Tailscale del dueño del Mac.
+En cada tick el TPM lleva esas respuestas a la base del Gantt y sigue como dice `gantt-flota` (skill `iniciativas-flota`,
+«Decisiones en el tick»).
+
+Por qué no por las tarjetas «Needs you» de Shepherdr: esas son la pregunta de un agente vivo parado en su hook
+(`AskUserQuestion`, un permiso), y la respuesta vuelve a ese agente. Estas decisiones no paran a nadie y las lleva el TPM.
+Si quien pregunta es una tarea de Shepherdr que ya está en «Needs you», se responde ahí y el TPM no la copia.
+
+Pruebas: `node shell/prueba-iniciativas.mjs` (lector) y `zsh shell/prueba-decisiones.zsh` (guardar y servidor, en un
+HOME temporal).
 
 ## Lanzar un asiento
 
