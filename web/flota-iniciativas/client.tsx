@@ -314,16 +314,17 @@ function Panel({ foto, onClose, mias, setMias }: { foto: Foto | null | 'error'; 
       >
         <div className="flex items-center gap-2 px-4 pt-3 pb-2">
           <div className="min-w-0 flex-1">
-            <Tabs label="Vista">
+            <Tabs label="Vista" className="flex w-full">
               {VISTAS.map(([k, l]) => (
-                <Tab key={k} on={vista === k} onClick={() => { setVista(k); setAbierta(null) }}>
+                <Tab key={k} fill on={vista === k} onClick={() => { setVista(k); setAbierta(null) }}>
                   {l}
-                  {k === 'decisiones' && pendientes ? <span className="grid h-4 min-w-4 place-items-center rounded-full bg-need px-1 text-[0.6875rem] font-semibold text-bg tabular-nums">{pendientes}</span> : null}
+                  {k === 'decisiones' && pendientes ? <span className="ml-1 inline-grid h-4 min-w-4 place-items-center rounded-full bg-need px-1 align-[0.0625rem] text-[0.6875rem] font-semibold text-bg tabular-nums">{pendientes}</span> : null}
                 </Tab>
               ))}
             </Tabs>
           </div>
-          {ok ? <span className="text-[0.75rem] text-fg3 tabular-nums">{hace(ok.at, now)}</span> : null}
+          {/* en el teléfono no cabe junto a las cuatro pestañas; cada producto dice cuándo escribió el TPM */}
+          {ok ? <span className="text-[0.75rem] text-fg3 tabular-nums phone:hidden">{hace(ok.at, now)}</span> : null}
           <Cerrar onClick={onClose} label="Cerrar" />
         </div>
         <div key={vista} className="min-h-0 flex-1 overflow-y-auto px-2 pb-[max(env(safe-area-inset-bottom),--spacing(4))]">
