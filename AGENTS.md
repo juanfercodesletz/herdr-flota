@@ -9,3 +9,4 @@
 - En pruebas con `zsh -f`, $EPOCHSECONDS necesita `zmodload zsh/datetime`; las direcciones de hc llevan letras (t3m): captúralas con `^t[0-9a-z]+`.
 - En los paneles de la web que van en createPortal a document.body, las clases `phone:` de Tailwind no aplican (quedan fuera de [data-device]); usa `max-sm:`.
 - Para probar herdr-task en un core aislado: HC_SOCKET=HC_TERMINAL_SOCKET en /tmp (su guardia rechaza HC_SESSION), HERDR_TASK_STORE propio, un herdr-app falso en el PATH y sin variables CLAUDE*; ver `shell/prueba-reanudar.zsh`.
+- Para probar un plugin de la web sin tocar la web en vivo: copia ~/Codes/Personal/shepherdr a scratch (node_modules con symlink), pon los plugins en SHEPHERDR_HOME=‹tmp›/plugins y corre vite con proxy a la URL del tailnet (/api reescrito a /shepherdr/api, con cabecera origin).
