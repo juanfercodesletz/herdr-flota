@@ -119,6 +119,7 @@ Ejemplo completo: `ejemplos/veta.json`.
 ```json
 {
   "producto": "Veta",
+  "espacios": ["Backend & Web", "veta-frontend"],
   "epicas": [
     { "id": "86e3yj2qg", "titulo": "Órdenes de compra en causaciones", "estado": "a tiempo",
       "link": "https://app.clickup.com/t/86e3yj2qg",
@@ -131,6 +132,10 @@ Ejemplo completo: `ejemplos/veta.json`.
 ```
 
 - `producto` y `titulo` son obligatorios; lo demás puede faltar. Títulos en lenguaje de producto.
+- `espacios`: los nombres de los espacios de Shepherdr donde se ve el producto (como salen en la barra lateral; sin
+  distinguir mayúsculas). Lo pone el TPM. El panel muestra solo los productos del espacio abierto (en el teléfono, el del
+  cajón) y cambia al cambiar de espacio; **Home** (el espacio de la carpeta de inicio, `~`) los ve todos. Sin `espacios`,
+  el producto solo se ve en Home. Un espacio sin productos dice «Este espacio no tiene iniciativas».
 - `id`: el de ClickUp. Es el que va en `flota-lanzar --tarea`, así la sesión lleva `flota.tarea=<id>`.
 - `sesion`: el nombre del terminal en hc que la trabaja, solo mientras la hay.
 - Estado de tarea: `en cola`, `en curso`, `auditoría`, `PR abierto`, `bloqueada` o `merged` (cada uno con su color
