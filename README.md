@@ -8,7 +8,10 @@ Diseño (canvas): https://claude.ai/artifact/5rVDW3BgbwVmEpvcSkQ9Lj — ronda 3 
 
 ## Cómo se ve
 
-- **Izquierda:** árbol de productos. Clic en un capitán o sesión → su terminal en peek.
+- **Izquierda:** árbol de productos, bajo los espacios: cada espacio con su TPM (el Assistant) y sus sesiones
+  vivas (tareas que trabajan, esperan o están listas, y los agentes de sus pestañas), bajo la épica de su
+  tarea si hay iniciativas. Clic en una sesión → su terminal en peek. En el teléfono: cajón → **Flota**.
+  Lo en cola y lo hecho no sale ahí: está en Tasks. Prueba: `node shell/prueba-arbol.mjs`.
 - **Centro:** la terminal del TPM. Solo el humano escribe ahí; los agentes le hablan por canal.
 - **Vistas del producto:** Iniciativas (épicas y tareas sueltas; clic en épica → hoja inferior
   con sus tareas), Tablero (tarjetas del mismo alto), Gantt, Decisiones.
@@ -37,7 +40,7 @@ no tiene ArtifactData y no hay API pública). Por eso el TPM es el puente: en ca
 1. Shepherdr instalado como base. ✓
 2. La flota corre en herdr-core (`hc`), con etiquetas `flota.producto`, `flota.rol`,
    `flota.padre`, `flota.tarea` y `flota.asiento` en cada terminal. En curso: lanzador ✓.
-3. Árbol de productos.
+3. Árbol de productos. ✓
 4. Entorno. ✓ (primero, por ser independiente del resto)
 5. Iniciativas, desde el archivo que escribe el TPM. ✓
 6. Decisiones, con el puente del TPM.
