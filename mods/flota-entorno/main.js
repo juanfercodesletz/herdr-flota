@@ -59,7 +59,12 @@ export default class Entorno extends View {
         } catch { this.seats[p] = null; }
       }
       try { this.seats.codex = JSON.parse((await exec("python3", ["-c", CODEX])).stdout || "null"); } catch { this.seats.codex = null; }
-      try { this.mac = parseMac((await exec("sh", ["-c", MAC, "sh", DISCO])).stdout); } catch { this.mac = null; }
+      // Una muestra que falla (exec corta a los 30 s con la máquina cargada, o no puede crear el proceso) no borra
+      // la última buena: se queda, y el panel dice de cuándo es.
+      try {
+        const m = parseMac((await exec("sh", ["-c", MAC, "sh", DISCO])).stdout);
+        if (m.ramGb > 0) this.mac = { ...m, at: Math.floor(Date.now() / 1000) };
+      } catch {}
       // Disco: disco.sh tarda ~1 min, así que corre aparte y deja disco.txt; se relanza cada 30 min.
       try { this.disk = parseDisco((await readTextFile(flota + "/disco.txt")) || ""); } catch { this.disk = null; }
       if ((!this.disk || Date.now() / 1000 - this.disk.at > 1800) && Date.now() - (this.diskLaunched || 0) > 600000) {
@@ -106,7 +111,9 @@ export default class Entorno extends View {
         .children(e.seats.map(row)))
       .child(v_flex().gap(14)
         .child(head2("Este Mac", "Presupuesto"))
-        .when(Boolean(e.mac), (el) => el.children((e.mac || []).map(row))))
+        .when(Boolean(e.mac), (el) => el.children((e.mac || []).map(row)))
+        .when(Boolean(e.macNote), (el) => el.child(div().text_size(10.5).text_color(t.working).child(e.macNote)))
+        .when(!e.mac, (el) => el.child(div().text_size(11.5).text_color(t.dim).child("Midiendo…"))))
       .child(div().flex_1())
       .child(div().text_size(10.5).text_color(t.dim).child("La raya marca el techo. Solo se colorea lo que está cerca o encima."));
   }

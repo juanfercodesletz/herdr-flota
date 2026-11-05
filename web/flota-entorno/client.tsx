@@ -96,6 +96,8 @@ function Panel({ foto, onClose }: { foto: Foto | null | 'error'; onClose: () => 
             <div className="flex flex-col gap-3.5">
               <Encabezado left="Este Mac" right="Presupuesto" />
               {(e.mac || []).map((r: Row) => <Fila key={r.k} {...r} />)}
+              {e.macNote ? <p className="text-[0.75rem] text-work-fg phone:text-[0.8125rem]">{e.macNote}</p> : null}
+              {e.mac ? null : <p className="text-[0.8125rem] text-fg3">Midiendo…</p>}
             </div>
             <p className="text-[0.75rem] text-fg3">La raya marca el techo. Solo se colorea lo que está cerca o encima.</p>
           </div>

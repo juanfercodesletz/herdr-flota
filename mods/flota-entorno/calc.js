@@ -11,7 +11,8 @@ export const SEATS = ["ccw", "ccp", "codex"];
 export const level = (n, c) => (n == null ? "none" : n >= c ? "over" : n >= c - 10 ? "near" : "ok");
 
 // La foto: { cap, seats: {ccw, ccp, codex}, mac, disk, agents } (lo que lee main.js).
-// Devuelve el titular y las filas { k, pct, c, val, right, note, warn }; pct null = sin dato; warn: aviso en rojo.
+// Devuelve el titular, las filas { k, pct, c, val, right, note, warn } (pct null = sin dato; warn: aviso en rojo)
+// y macNote, la antigüedad del dato del Mac cuando no es de ahora; mac null = aún sin ninguna muestra.
 export function entorno(s, now = Date.now() / 1000) {
   const cap = s.cap, m = s.mac;
 
@@ -48,7 +49,9 @@ export function entorno(s, now = Date.now() / 1000) {
     disco(m, s.disk, cap.start_disk, now),
     { k: "Sesiones", pct: Math.round(sessions / cap.sesiones * 100), c: 100, val: `${sessions}`, right: `${cap.sesiones}` },
   ];
-  return { head, sub, seats, mac };
+  // Si las últimas muestras del Mac fallaron, se ve la última buena con su antigüedad (main.js la conserva).
+  const macNote = m?.at && now - m.at > 90 ? `dato de ${ago(m.at, now)}` : "";
+  return { head, sub, seats, mac, macNote };
 }
 
 export const clamp = (n) => Math.max(0, Math.min(100, Math.round(n || 0)));
