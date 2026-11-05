@@ -14,6 +14,8 @@ for m in "$here"/mods/*/; do
   mkdir -p "$app/mods/$name" && rsync -a --delete "$m" "$app/mods/$name/"
   echo "  mod     $name"
 done
+# Un mod solo importa de su carpeta: el árbol lleva su copia del lector de iniciativas.
+cp "$here/mods/flota-iniciativas/iniciativas.js" "$app/mods/flota-arbol/"
 
 python3 - "$app" <<'EOF'
 import json, sys
@@ -29,6 +31,10 @@ def find(n, id):
     if n.get("id") == id: return n
     return next((r for c in n.get("children", []) if (r := find(c, id))), None)
 find(d, "panel-body")["children"].append({"id": "iniciativas", "type": "block", "content": {"mod": "flota-iniciativas"}})
+# Árbol de productos: en la columna izquierda, bajo la lista de espacios.
+lists = find(d, "sidebar-lists")["children"]
+lists[:] = [c for c in lists if c.get("id") != "arbol"]
+lists.append({"id": "arbol", "type": "block", "size": {"weight": 2}, "min": 120, "content": {"mod": "flota-arbol"}})
 work = find(d, "work")
 i, bar = next((i, c) for i, c in enumerate(work["children"]) if c.get("id") == "tabs")
 work["children"][i] = {"id": "tabs-row", "type": "row", "size": bar.pop("size"), "resizable": False, "children": [
@@ -42,11 +48,12 @@ EOF
 # un servidor local la sirve y Tailscale la publica en /flota del mismo tailnet (la app de Tailscale en macOS no
 # puede servir una carpeta). `shepherdr update` reconstruye la web solo si el plugin cambió.
 # Iniciativas igual, con iniciativas.js y la foto iniciativas.json.
-for p in flota-entorno:calc.js flota-iniciativas:iniciativas.js; do
+for p in flota-entorno:calc.js flota-iniciativas:iniciativas.js flota-arbol:arbol.js; do
   name=${p%%:*} js=${p#*:} plug="${SHEPHERDR_HOME:-$HOME/.shepherdr}/plugins/$name"
-  mkdir -p "$plug" && rsync -a --delete --exclude "$js" "$here/web/$name/" "$plug/" && rsync -a "$here/mods/$name/$js" "$plug/"
+  mkdir -p "$plug" && rsync -a --delete --exclude "*.js" "$here/web/$name/" "$plug/" && rsync -a "$here/mods/$name/$js" "$plug/"
   echo "  web     $name"
 done
+rsync -a "$here/mods/flota-iniciativas/iniciativas.js" "${SHEPHERDR_HOME:-$HOME/.shepherdr}/plugins/flota-arbol/"
 if [ "$(uname)" = Darwin ]; then
   mkdir -p "$HOME/.herdr/flota/web"
   plist="$HOME/Library/LaunchAgents/dev.herdr-flota.web.plist"
