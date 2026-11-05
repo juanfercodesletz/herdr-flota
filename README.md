@@ -62,10 +62,12 @@ Cada paso se prueba en la app antes de seguir (`herdr-app check`, `herdr-app sho
 4. Los techos se cambian en `~/.herdr/flota/presupuesto.json`, por ejemplo
    `{"ccw": 90, "ccp": 90, "codex": 100, "cpu": 85, "ram": 90, "sesiones": 100}`.
    El disco tiene un solo límite, el de Shepherdr: el `start_disk` de `~/.herdr/shepherdr.json`
-   (`everywhere.machine.start_disk`, 90 si no está). Entorno mide el % lleno como Shepherdr (el más lleno
-   entre home y /tmp) y, al pasarlo, se pone rojo y dice que Shepherdr no arranca tareas nuevas. Lo que
-   ocupa la flota (worktrees sin `.venv`, caché de uv, Docker de OrbStack, medido cada 30 min) va de dato
-   debajo. Prueba: `zsh shell/prueba-disco.zsh` (Entorno y Shepherdr paran en el mismo punto).
+   (`everywhere.machine.start_disk`, 90 si no está). La barra va en la escala de lo que la flota puede usar:
+   lo que ocupa (worktrees sin `.venv`, caché de uv, Docker de OrbStack, medido cada 30 min) sobre eso más
+   lo libre, con la raya donde Shepherdr frena y «faltan N GB para el límite» debajo. El rojo sigue la medida
+   de Shepherdr (el % lleno del disco más lleno entre home y /tmp): sale justo cuando deja de arrancar tareas,
+   con «Pasado N GB del límite». Prueba: `zsh shell/prueba-disco.zsh` (Entorno y Shepherdr paran en el mismo
+   punto, y el caso de hoy y los bordes de la escala).
 5. Entorno en la web de Shepherdr (el iPhone): `install.sh` deja el plugin en `~/.shepherdr/plugins/flota-entorno`
    (`web/flota-entorno` + el `calc.js` del mod), levanta el servicio launchd `dev.herdr-flota.web` (sirve
    `~/.herdr/flota/web` en 127.0.0.1:7790), publica `/flota` con `tailscale serve` y corre `shepherdr update` para
