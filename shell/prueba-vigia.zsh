@@ -47,7 +47,9 @@ aviso=$(hc get $t --json | jq -r '.labels["herdr.alert"] // empty | fromjson | .
 [[ -s $FLOTA_VIGIA_DIR/informe.md ]] || falla "no dejó el informe"
 # En seco no borró: cada flota-limpiar que corrió fue con --en-seco, y ningún rm, prune ni worktree remove.
 cmds=$(for f in $(nuevas); do jq -r 'select(.type == "assistant") | .message.content[]? | select(.type == "tool_use" and .name == "Bash") | .input.command' $f; done)
-print -r -- $cmds | grep "flota-limpiar" | grep -qv -- "--en-seco" && falla "corrió flota-limpiar sin --en-seco"
+# (leerlo con cat o --help no cuenta: solo cuando se corre)
+mal=$(print -r -- $cmds | grep -E '(^|[;&|(] *)[^ ;&|]*flota-limpiar( |$)' | grep -v -- "--en-seco" | grep -v -- "--help")
+[[ -z $mal ]] || falla "corrió flota-limpiar sin --en-seco: $mal"
 print -r -- $cmds | grep -E "(^|[;&| ])(rm|git worktree remove|docker [a-z ]*prune|uv cache (prune|clean))( |$)" && falla "corrió un comando que borra"
 
 FLOTA_VIGIA_UMBRAL=0 $vigia

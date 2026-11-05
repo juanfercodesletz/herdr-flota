@@ -42,7 +42,7 @@ for t in $(hc ls --json --label flota.rol=limpieza 2>/dev/null | jq -r '.termina
   st=$(hc get $t --json 2>/dev/null | jq -r '.status.state // ""')
   [[ $st == idle || $st == done ]] || { log "disco $pct % (umbral $umbral): la limpieza $t sigue (${st:-arrancando})"; exit 0 }
 done
-ultimo=$(<$dir/ultimo 2>/dev/null)
+ultimo=$(cat $dir/ultimo 2>/dev/null)
 (( EPOCHSECONDS - ${ultimo:-0} < 3600 )) && { log "disco $pct % (umbral $umbral): lancé hace $(( (EPOCHSECONDS - ultimo) / 60 )) min, espero la hora"; exit 0 }
 for t in $(hc ls --json --label flota.rol=limpieza 2>/dev/null | jq -r '.terminals[].address'); do hc kill $t >/dev/null 2>&1; hc rm $t >/dev/null 2>&1; done
 

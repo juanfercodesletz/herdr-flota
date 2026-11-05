@@ -43,7 +43,7 @@ if (( ${partes[(I)uv]} )); then
   if [[ -z $dir || ! -d $dir ]]; then print "No hay caché de uv."
   else
     print "Ocupa $(gb $(kb $dir)) en $dir."
-    if (( seco )); then print "Correría: uv cache prune (solo lo que nadie usa; nunca --force)."
+    if (( seco )); then print "Correría: uv cache prune (solo lo que nadie usa; nunca --force). uv no dice antes cuánto libera: no lo cuentes como liberado."
     else
       # uv espera para siempre si otro uv tiene la caché: se mira su salida y se corta en cuanto lo dice.
       out=$(mktemp)

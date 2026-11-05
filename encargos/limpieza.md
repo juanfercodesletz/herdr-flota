@@ -24,7 +24,9 @@ El encargo dice el modo: **en seco** (medir e informar, sin borrar) o **de verda
    ~/.local/bin/herdr-task alert "Disco: liberé 4 GB, queda en 91 %" --body "No borré 70 worktrees con cambios (12 GB, casi todos un ESTADO.md en veta) ni 3 volúmenes de Docker sin uso (2 GB). Decide tú si se borran."
    ```
 
-   En seco, el título dice lo que liberaría: `"Disco (en seco): liberaría 4 GB"`. El título, unas 6 palabras;
+   En seco, el título dice lo que liberaría seguro: `"Disco (en seco): liberaría 4 GB"`. Cuenta solo los
+   worktrees de «Borraría» y la caché de builds de Docker: `uv cache prune` borra solo lo que nadie usa y no
+   dice cuánto antes de correr, así que la caché de uv no suma (di «y lo que pode uv»). El título, unas 6 palabras;
    el `--body`, 300 caracteres como mucho: lo liberado, lo grande que queda sin tocar y qué decide él.
 5. **Deja el informe** en el archivo que dice el encargo (`~/.herdr/flota/vigia/informe.md`): tu resumen
    arriba y debajo la salida completa de `bin/flota-limpiar`. Termina tu turno con el mismo resumen.
