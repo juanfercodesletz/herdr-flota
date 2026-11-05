@@ -6,10 +6,12 @@
 // del Gantt; un clic en una opción la guarda en ~/.herdr/flota/respuestas/<archivo> (respuestas.py), y el TPM la recoge.
 // Vive en el panel de la derecha (el de Tasks y Files); con props {boton: true} es el botón de la barra
 // de arriba que lo abre y lo cierra, como los de Tasks y Files.
+// Muestra los productos del espacio abierto (su campo `espacios`); Home, todos. Cambia con el espacio, sin esperar
+// la siguiente lectura: spaces() hace que el mod se vuelva a dibujar.
 import { View, div, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { exec, home, appHome, theme, layout, run, props } from "herdr";
-import { leer, avance, esperan, ordenar, tono, hace, SIN_ARCHIVO, tablero, gantt, chip, tonoChip, pos, ahora, SALIDAS, SIN_PLAN, abiertas, cuantas } from "./iniciativas.js";
+import { exec, home, appHome, theme, layout, run, props, spaces } from "herdr";
+import { leer, avance, esperan, ordenar, tono, hace, SIN_ARCHIVO, tablero, gantt, chip, tonoChip, pos, ahora, SALIDAS, SIN_PLAN, abiertas, cuantas, delEspacio, esHome, SIN_INICIATIVAS } from "./iniciativas.js";
 
 const VISTAS = [["iniciativas", "Iniciativas"], ["tablero", "Tablero"], ["gantt", "Gantt"], ["decisiones", "Decisiones"]];
 
@@ -72,9 +74,11 @@ export default class Iniciativas extends View {
         .child(div().flex_none().text_color(t.dim).child(b))
         .when(Boolean(alerta), (el) => el.child(div().min_w(0).text_color(t.blocked).truncate().child(`· ${alerta}`))));
 
+    const abierto = spaces().find((s) => s.active);
+    const vistos = delEspacio(this.productos || [], abierto && { nombre: abierto.name, home: esHome(abierto.folder) });
     const lista = [];
     let sel = null;
-    for (const p of this.productos || []) {
+    for (const p of vistos) {
       if (p.error) { lista.push(div().py(8).text_size(12).text_color(t.blocked).child(p.error)); continue; }
       lista.push(h_flex().pt(10).pb(4).gap(8).items_baseline()
         .child(div().text_size(10.5).text_color(t.dim).child(p.producto.toUpperCase()))
@@ -111,7 +115,7 @@ export default class Iniciativas extends View {
       .on_size_change((size, cx) => { if (Math.abs(size.width - this.ancho) > 1) { this.ancho = size.width; cx.notify(); } })
       .child(v_flex().size_full().px(14).pt(12).pb(8)
         .child(h_flex().pb(4).gap(2).items_center().children(VISTAS.map(([k, label]) => {
-          const on = this.vista === k, n = k === "decisiones" ? (this.productos || []).reduce((s, p) => s + abiertas(p), 0) : 0;
+          const on = this.vista === k, n = k === "decisiones" ? vistos.reduce((s, p) => s + abiertas(p), 0) : 0;
           return div().id(`vista-${k}`).h(26).px(10).gap(6).flex().items_center().rounded(6).text_size(12.5)
             .bg(on ? t.selected : t.background).text_color(on ? t.foreground : t.muted).when(on, (e) => e.font_semibold())
             .cursor_pointer().hover((s) => s.bg(on ? t.selected : t.hover).text_color(t.foreground))
@@ -122,6 +126,7 @@ export default class Iniciativas extends View {
         .child(v_flex().id("lista").flex_1().min_h(0).overflow_y_scroll()
           .when(this.productos === null, (el) => el.child(div().py(8).text_size(12).text_color(t.dim).child("Leyendo…")))
           .when(this.productos?.length === 0, (el) => el.child(div().py(8).text_size(12).text_color(t.dim).child(SIN_ARCHIVO)))
+          .when(this.productos?.length > 0 && vistos.length === 0, (el) => el.child(div().py(8).text_size(12).text_color(t.dim).child(SIN_INICIATIVAS)))
           .children(lista))
         .child(div().pt(8).text_size(10.5).text_color(t.dim).child(this.vista === "decisiones"
           ? "Las mismas decisiones del Gantt: respóndelas aquí o desde el celular · ★ recomendada"

@@ -1,7 +1,7 @@
 // node shell/prueba-iniciativas.mjs: el lector de ~/.herdr/flota/<producto>.json con el ejemplo y con archivos malos.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { leer, avance, tono, tablero, gantt, ahora, chip, tonoChip, ordenar, esperan, abiertas, cuantas } from "../mods/flota-iniciativas/iniciativas.js";
+import { leer, avance, tono, tablero, gantt, ahora, chip, tonoChip, ordenar, esperan, abiertas, cuantas, delEspacio, esHome, SIN_INICIATIVAS } from "../mods/flota-iniciativas/iniciativas.js";
 
 const ej = leer("veta.json", readFileSync(new URL("../ejemplos/veta.json", import.meta.url), "utf8"));
 assert.equal(ej.error, undefined);
@@ -18,7 +18,7 @@ assert.equal(leer("x.json", null).error, "x.json: no se pudo leer");
 assert.equal(leer("x.json", "{}").error, 'x.json: falta "producto"');
 assert.match(leer("x.json", '{"producto":"P","epicas":{}}').error, /listas/);
 assert.match(leer("x.json", '{"producto":"P","sueltas":[{"id":"a1"}]}').error, /sin "titulo" \(a1\)/);
-assert.deepEqual(leer("x.json", '{"producto":"P"}'), { archivo: "x.json", producto: "P", epicas: [], sueltas: [], decisiones: [] });
+assert.deepEqual(leer("x.json", '{"producto":"P"}'), { archivo: "x.json", producto: "P", espacios: [], epicas: [], sueltas: [], decisiones: [] });
 
 // Orden por lo que pide acción: tareas bloqueada → PR → auditoría → en curso (y lo raro) → en cola → merged, estable.
 assert.deepEqual(ej.epicas[0].tareas.map((t) => t.id.slice(-2)), ["t5", "t9", "ta", "t4", "t6", "tb", "tc", "t1", "t2", "t3"]);
@@ -77,4 +77,22 @@ assert.deepEqual(D([{ id: 3, pregunta: "¿?", estado: "raro" }]).decisiones[0], 
 // Una cerrada no cambia con lo de Herdr.
 assert.equal(leer("x.json", JSON.stringify({ producto: "P", decisiones: [{ id: "a", pregunta: "¿?", opciones: ["Sí", "No"], estado: "cerrada", respuesta: "No" }] }),
   JSON.stringify({ a: { respuesta: "Sí" } })).decisiones[0].respuesta, "No");
+
+// Por espacio: cada espacio ve los productos que lo nombran en `espacios`; Home (por su carpeta, no su nombre) ve todos,
+// en el orden por urgencia; sin `espacios`, solo Home. Un archivo mal escrito sigue en sus espacios; uno ilegible, solo en Home.
+const F = (producto, espacios, estado = "en curso") => leer(`${producto}.json`, JSON.stringify({ producto, espacios, sueltas: [T(estado)] }));
+const todos = ordenar([F("flota", ["herdr-flota"]), F("veta", ["Backend & Web", "veta-frontend"], "bloqueada"), F("suelto", undefined),
+  leer("roto.json", '{"producto":"R","espacios":["herdr-flota"],"epicas":{}}'), leer("ilegible.json", "{ roto")]);
+const ve = (e) => delEspacio(todos, e).map((p) => p.producto || p.archivo);
+assert.deepEqual(ve({ nombre: "Home", home: true }), ["veta", "flota", "suelto", "roto.json", "ilegible.json"]);
+assert.deepEqual(ve(null), ve({ nombre: "Home", home: true }));
+assert.deepEqual(ve({ nombre: "herdr-flota", home: false }), ["flota", "roto.json"]);
+assert.deepEqual(ve({ nombre: "backend & web", home: false }), ["veta"]); // sin distinguir mayúsculas
+assert.deepEqual(ve({ nombre: "Home", home: false }), []); // un espacio llamado Home que no está en ~ no es Home
+assert.deepEqual(ve({ nombre: "letz-infra", home: false }), []); // el panel muestra SIN_INICIATIVAS
+assert.equal(SIN_INICIATIVAS, "Este espacio no tiene iniciativas");
+assert.match(leer("x.json", '{"producto":"P","espacios":"herdr-flota"}').error, /"espacios" va como lista/);
+assert.deepEqual(leer("x.json", '{"producto":"P","espacios":["a",3,"","b"]}').espacios, ["a", "b"]);
+assert.deepEqual(["/Users/juanfer", "/home/u/", "/root", "", "~"].map(esHome), [true, true, true, true, true]);
+assert.deepEqual(["/Users/juanfer/Codes", "~/Codes/x", "/srv/u"].map(esHome), [false, false, false]);
 console.log("ok");
