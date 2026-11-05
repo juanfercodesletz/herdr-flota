@@ -2,16 +2,16 @@
 // (main.js) y el de la web de Shepherdr (web/flota-entorno/client.tsx): mismas filas, mismos colores.
 // Sin imports: corre igual en Herdr y en el navegador.
 
-// Techos por defecto; ~/.herdr/flota/presupuesto.json los cambia.
-// disco_flota_gb: lo que puede ocupar la flota; disco_min_gb: libre bajo el cual el disco va en rojo.
-export const DEFAULTS = { ccw: 90, ccp: 90, codex: 100, cpu: 85, ram: 90, disco_flota_gb: 100, disco_min_gb: 20, sesiones: 100 };
+// Techos por defecto; ~/.herdr/flota/presupuesto.json los cambia. El del disco no está aquí: es el
+// start_disk de Shepherdr (main.js lo lee de ~/.herdr/shepherdr.json y lo deja en cap.start_disk).
+export const DEFAULTS = { ccw: 90, ccp: 90, codex: 100, cpu: 85, ram: 90, sesiones: 100 };
 export const SEATS = ["ccw", "ccp", "codex"];
 
 // Solo se colorea lo que está cerca (10 puntos) o encima del techo.
 export const level = (n, c) => (n == null ? "none" : n >= c ? "over" : n >= c - 10 ? "near" : "ok");
 
 // La foto: { cap, seats: {ccw, ccp, codex}, mac, disk, agents } (lo que lee main.js).
-// Devuelve el titular y las filas { k, pct, c, val, right, note }; pct null = sin dato.
+// Devuelve el titular y las filas { k, pct, c, val, right, note, warn }; pct null = sin dato; warn: aviso en rojo.
 export function entorno(s, now = Date.now() / 1000) {
   const cap = s.cap, m = s.mac;
 
@@ -45,7 +45,7 @@ export function entorno(s, now = Date.now() / 1000) {
   const mac = m && [
     { k: "CPU", pct: m.cpu, c: cap.cpu, val: m.cpu == null ? "—" : `${m.cpu}%`, right: `${cap.cpu}%` },
     { k: "RAM", pct: m.ramUsedGb == null ? null : Math.round(m.ramUsedGb / m.ramGb * 100), c: cap.ram, val: m.ramUsedGb == null ? "—" : `${m.ramUsedGb.toFixed(0)} GB`, right: `${Math.round(m.ramGb * cap.ram / 100)} GB` },
-    { k: "Disco (flota)", pct: diskPct(m, s.disk, cap), c: 100, val: s.disk ? `${Math.round(s.disk.total)} GB` : "—", right: `${cap.disco_flota_gb} GB`, note: diskNote(m, s.disk, now) },
+    disco(m, s.disk, cap.start_disk, now),
     { k: "Sesiones", pct: Math.round(sessions / cap.sesiones * 100), c: 100, val: `${sessions}`, right: `${cap.sesiones}` },
   ];
   return { head, sub, seats, mac };
@@ -71,15 +71,38 @@ export function resetAt(at) {
   return `${days === 0 ? "hoy" : days === 1 ? "mañana" : DIAS[d.getDay()]} ${hm}`;
 }
 
-// Disco: lo que ocupa la flota contra su presupuesto. Si el libre baja del mínimo, rojo igual.
-function diskPct(m, d, cap) {
-  if (m.diskFreeGb <= cap.disco_min_gb) return 100;
-  return d ? clamp((d.total / cap.disco_flota_gb) * 100) : null;
+// El start_disk de Shepherdr como él lo resuelve (settings.py machine_limits): el de "everywhere", luego el
+// de esta máquina; sin ninguno, 90. null: sin límite.
+export function startDisk(d) {
+  const set = [d.everywhere?.machine, d.machines?.[d.here || "local"]?.machine].filter((x) => x && "start_disk" in x);
+  return set.length ? set[set.length - 1].start_disk : 90;
 }
 
-function diskNote(m, d, now) {
-  const parts = d ? [["worktrees", d.wt], ["uv", d.uv], ["Docker", d.docker]].filter(([, v]) => v != null).map(([k, v]) => `${k} ${Math.round(v)}`) : ["midiendo…"];
-  parts.push(`libres ${m.diskFreeGb} GB`);
-  if (d && now - d.at > 3600) parts.push(`medido ${ago(d.at, now)}`);
-  return parts.join(" · ");
+// El disco como lo mide Shepherdr (machine.py _disks): statvfs de home y /tmp, usado = bloques - libres
+// (no el «Used» de df, que en APFS cuenta solo este volumen) sobre usado + libre para un usuario.
+// DISCO es el python que lo imprime; discoStat lo lee → { diskPct, diskFreeGb } del más lleno.
+export const DISCO = `import os
+for p in (os.path.expanduser("~"), "/tmp"):
+    s = os.statvfs(p); print("statvfs", (s.f_blocks - s.f_bfree) * s.f_frsize, s.f_bavail * s.f_frsize)`;
+export function discoStat(out) {
+  const d = [...out.matchAll(/^statvfs (\d+) (\d+)$/gm)].map(([, u, a]) => [Number(u), Number(a)]).filter(([u, a]) => u + a > 0)
+    .map(([u, a]) => ({ diskPct: Math.round((u * 100) / (u + a)), diskFreeGb: Math.round(a / 2 ** 30) }))
+    .sort((a, b) => b.diskPct - a.diskPct)[0];
+  return d || { diskPct: null, diskFreeGb: null };
+}
+
+// Disco: el % lleno como lo mide Shepherdr (el disco más lleno entre home y /tmp) contra su start_disk,
+// pasado el cual Shepherdr no arranca tareas nuevas. Lo que ocupa la flota va de dato en la nota.
+// start_disk null: Shepherdr no tiene límite de disco.
+export function disco(m, d, lim = 90, now = Date.now() / 1000) {
+  const over = lim != null && m.diskPct > lim;
+  const flota = d ? [["worktrees", d.wt], ["uv", d.uv], ["Docker", d.docker]].filter(([, v]) => v != null).map(([k, v]) => `${k} ${Math.round(v)}`) : [];
+  const note = [d ? `flota ${Math.round(d.total)} GB (${flota.join(" · ")})` : "flota: midiendo…", `libres ${m.diskFreeGb} GB`];
+  if (d && now - d.at > 3600) note.push(`medido ${ago(d.at, now)}`);
+  return {
+    // ponytail: Shepherdr para con pct > lim y level() pinta rojo con pct >= c; el % es entero, así que c = lim + 0.5.
+    k: "Disco", pct: m.diskPct, c: lim == null ? 101 : lim + 0.5, val: m.diskPct == null ? "—" : `${m.diskPct}%`,
+    right: lim == null ? "sin límite" : `${lim}%`, note: note.join(" · "),
+    warn: over ? `Pasa el ${lim} %: Shepherdr no arranca tareas nuevas` : "",
+  };
 }

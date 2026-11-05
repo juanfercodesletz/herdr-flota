@@ -9,7 +9,7 @@ import { FootButton } from '@client/ui.tsx'
 import { ago, clamp, entorno, level } from './calc.js'
 
 type Level = 'none' | 'ok' | 'near' | 'over'
-interface Row { k: string; pct?: number | null; c: number; val: string; right: string; note?: string }
+interface Row { k: string; pct?: number | null; c: number; val: string; right: string; note?: string; warn?: string }
 type Foto = Parameters<typeof entorno>[0] & { at: number }
 
 // Los mismos tonos del escritorio: gris lo que va bien, ámbar cerca del techo, rojo encima.
@@ -27,7 +27,7 @@ function useFoto() {
   return foto
 }
 
-function Fila({ k, pct, c, val, right, note }: Row) {
+function Fila({ k, pct, c, val, right, note, warn }: Row) {
   const l = level(pct, c) as Level
   return (
     <div className="flex flex-col gap-1.5">
@@ -40,6 +40,7 @@ function Fila({ k, pct, c, val, right, note }: Row) {
         <div className={clsx('h-full rounded-full', FILL[l])} style={{ width: `${clamp(pct ?? 0)}%` }} />
         {c < 100 ? <div className="absolute -top-[2px] h-[7px] w-px bg-fg opacity-50" style={{ left: `${c}%` }} /> : null}
       </div>
+      {warn ? <p className="text-[0.8125rem] font-semibold text-need-fg phone:text-[0.875rem]">{warn}</p> : null}
       {note ? <p className="text-[0.75rem] text-fg3 phone:text-[0.8125rem]">{note}</p> : null}
     </div>
   )
