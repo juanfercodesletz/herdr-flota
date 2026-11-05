@@ -113,6 +113,11 @@ Ejemplo completo: `ejemplos/veta.json`.
   (`a tiempo`, `en riesgo` en ámbar).
 - Escríbelo atómico (a `<archivo>.$$` y `mv`). `presupuesto.json` es de Entorno y no cuenta como producto.
 
+**Orden, por lo que pide acción** (lo hace el lector, así escritorio y web salen igual): tareas bloqueada → PR abierto →
+auditoría → en curso (y lo desconocido) → en cola → merged, y a igual estado el orden del archivo; épicas por su tarea
+más urgente (a igualdad, atrasada y en riesgo antes que a tiempo; las todo merged al final); productos con algo bloqueado
+o en PR primero. Cada épica dice cuántas tareas te esperan (bloqueadas o con PR abierto): «2 te esperan».
+
 En la app: botón **Iniciativas** al final de la barra de arriba; abre en el panel de la derecha, donde Tasks y
 Files. Clic en una épica → hoja inferior con sus tareas; clic en una tarea → ClickUp. En la web (el iPhone):
 fila **Iniciativas** arriba de los espacios del cajón. Un archivo que falta o está mal se dice en una línea.
