@@ -1,7 +1,7 @@
 // node shell/prueba-iniciativas.mjs: el lector de ~/.herdr/flota/<producto>.json con el ejemplo y con archivos malos.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { leer, avance, tono, tablero, gantt, ahora, chip, tonoChip, ordenar, esperan, abiertas } from "../mods/flota-iniciativas/iniciativas.js";
+import { leer, avance, tono, tablero, gantt, ahora, chip, tonoChip, ordenar, esperan, abiertas, cuantas } from "../mods/flota-iniciativas/iniciativas.js";
 
 const ej = leer("veta.json", readFileSync(new URL("../ejemplos/veta.json", import.meta.url), "utf8"));
 assert.equal(ej.error, undefined);
@@ -68,6 +68,7 @@ const veta = readFileSync(new URL("../ejemplos/veta.json", import.meta.url), "ut
 const conMia = leer("veta.json", veta, JSON.stringify({ D7: { respuesta: "Hoy", at: 1, desde: "web" }, D9: { respuesta: "otra cosa" } }));
 assert.deepEqual(conMia.decisiones.map((d) => [d.id, d.estado, d.respuesta]), [["D9", "abierta", ""], ["D7", "respondida", "Hoy"], ["D5", "respondida", "90 días"]]);
 assert.equal(abiertas(conMia), 1);
+assert.equal(cuantas(1), "1 abierta"); assert.equal(cuantas(0), "0 abiertas");
 assert.equal(leer("veta.json", veta, "{ roto").decisiones.length, 3); // respuestas rotas: se ignoran
 const D = (x) => leer("x.json", JSON.stringify({ producto: "P", decisiones: x }));
 assert.match(D({}).error, /"decisiones" va como lista/);

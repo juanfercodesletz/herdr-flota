@@ -10,7 +10,7 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { definePlugin } from '@client/kernel.ts'
 import { Tab, Tabs } from '@client/ui.tsx'
-import { ahora, avance, chip, esperan, gantt, hace, pos, SALIDAS, SIN_ARCHIVO, SIN_PLAN, tablero, tono, tonoChip } from './iniciativas.js'
+import { ahora, avance, chip, cuantas, esperan, gantt, hace, pos, SALIDAS, SIN_ARCHIVO, SIN_PLAN, tablero, tono, tonoChip } from './iniciativas.js'
 
 interface Tarea {
   id: string; titulo: string; estado: string; link: string; sesion: string
@@ -246,7 +246,7 @@ function Decisiones({ p, mias, setMias }: { p: Producto; mias: Mias; setMias: (f
   if (!decs.length) return <p className="px-2 py-1 text-[0.875rem] text-fg3">Sin decisiones abiertas.</p>
   return (
     <div className="flex flex-col gap-2 px-2">
-      <p className="text-[0.8125rem] text-fg2">{abiertasDe(p, mias)} abiertas · el TPM recoge las respondidas en su siguiente tick</p>
+      <p className="text-[0.8125rem] text-fg2">{cuantas(abiertasDe(p, mias))} · el TPM recoge las respondidas en su siguiente tick</p>
       {decs.map((d) => {
         const m = mias[`${p.archivo}#${d.id}`], abierta = d.estado === 'abierta', cerrada = d.estado === 'cerrada'
         const sub = [d.de && `pregunta ${d.de}`, d.tarea, d.contexto].filter(Boolean).join(' · ')

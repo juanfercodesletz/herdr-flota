@@ -9,7 +9,7 @@
 import { View, div, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { exec, home, appHome, theme, layout, run, props } from "herdr";
-import { leer, avance, esperan, ordenar, tono, hace, SIN_ARCHIVO, tablero, gantt, chip, tonoChip, pos, ahora, SALIDAS, SIN_PLAN, abiertas } from "./iniciativas.js";
+import { leer, avance, esperan, ordenar, tono, hace, SIN_ARCHIVO, tablero, gantt, chip, tonoChip, pos, ahora, SALIDAS, SIN_PLAN, abiertas, cuantas } from "./iniciativas.js";
 
 const VISTAS = [["iniciativas", "Iniciativas"], ["tablero", "Tablero"], ["gantt", "Gantt"], ["decisiones", "Decisiones"]];
 
@@ -194,7 +194,7 @@ export default class Iniciativas extends View {
   // la guarda; se puede cambiar mientras el TPM no la cierre. Sin opciones, se responde en el Gantt.
   decisiones(p, t) {
     if (!p.decisiones.length) return [div().py(6).text_size(12).text_color(t.dim).child("Sin decisiones abiertas.")];
-    const out = [div().pb(4).text_size(11.5).text_color(t.muted).child(`${abiertas(p)} abiertas · el TPM recoge las respondidas en su siguiente tick`)];
+    const out = [div().pb(4).text_size(11.5).text_color(t.muted).child(`${cuantas(abiertas(p))} · el TPM recoge las respondidas en su siguiente tick`)];
     if (this.aviso) out.push(div().pb(4).text_size(12).text_color(t.blocked).child(this.aviso));
     p.decisiones.forEach((d, i) => {
       const cerrada = d.estado === "cerrada", abierta = d.estado === "abierta";

@@ -68,6 +68,7 @@ function decisiones(decs, respuestas) {
 }
 // Las que esperan a Juan (el número de la pestaña).
 export const abiertas = (p) => (p.error ? 0 : p.decisiones.filter((x) => x.estado === "abierta").length);
+export const cuantas = (n) => `${n} abierta${n === 1 ? "" : "s"}`;
 
 const ordenTareas = (ts) => ts.sort(porClave((t) => [rango(t.estado), 0]));
 const str = (v) => (typeof v === "string" ? v : v == null ? "" : String(v));
