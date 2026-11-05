@@ -73,7 +73,20 @@ Cada paso se prueba en la app antes de seguir (`herdr-app check`, `herdr-app sho
    escritorio cada 15 s: con Herdr cerrado o sin el layout `flota`, la web avisa que el dato es viejo.
    En el teléfono: cajón de espacios → **Entorno**, al pie. Se quita con
    `launchctl bootout gui/$(id -u)/dev.herdr-flota.web` y `tailscale serve --set-path /flota off`.
-6. Para que cada sesión de Claude vuelva con su perfil tras un reinicio (Herdr las relanza con
+6. El vigía del disco: `install.sh` levanta el servicio launchd `dev.herdr-flota.vigia`, que cada 10 min corre
+   `bin/flota-vigia` (sin tokens). Si el disco pasa `start_disk − disco_margen` (3 por defecto, en
+   `presupuesto.json`), lanza **un** agente de limpieza en hc con `flota-lanzar` (ccp, Sonnet), fuera de la cola
+   de herdr-task, que se traba justo con el disco lleno. Nunca dos a la vez: no relanza mientras el anterior
+   trabaja, ni más de una vez por hora. Log: `~/.herdr/flota/vigia/log`.
+   El agente sigue `encargos/limpieza.md`: corre `bin/flota-limpiar`, que borra **solo** lo seguro (`uv cache
+   prune` sin `--force`, imágenes colgadas y caché de builds de Docker, y worktrees de `~/.herdr/worktrees`
+   mergeados, limpios, sin nadie dentro y quietos 24 h, con `git worktree remove`), lista lo demás con su
+   tamaño y avisa a Juan con `herdr-task alert`. Informe en `~/.herdr/flota/vigia/informe.md`.
+   `bin/flota-limpiar --en-seco` mide e informa sin borrar; `FLOTA_VIGIA_UMBRAL=0 bin/flota-vigia` prueba el
+   vigía con un umbral falso (y siempre en seco). Pruebas: `zsh shell/prueba-limpieza.zsh` (worktrees
+   desechables) y `zsh shell/prueba-vigia.zsh` (un agente real en seco, ~5 min).
+   Se quita con `launchctl bootout gui/$(id -u)/dev.herdr-flota.vigia`.
+7. Para que cada sesión de Claude vuelva con su perfil tras un reinicio (Herdr las relanza con
    `claude --resume <id>`, sin perfil), carga la función en `~/.zshrc`:
 
    ```sh

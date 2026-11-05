@@ -127,9 +127,10 @@ if (( ${partes[(I)worktrees]} )); then
     fi
   done
   orden() { for x in ${(f)"$(print -rl -- $@ | sort -t$'\t' -k1,1nr)"}; do print -r -- "  $(gb ${x%%$'\t'*})  ${x#*$'\t'}"; done }
-  print "$( (( seco )) && print Borraría || print Borré) (mergeados y limpios): $#si"
+  total() { local s=0 x; for x in $@; do (( s += ${x%%$'\t'*} )); done; gb $s }
+  print "$( (( seco )) && print Borraría || print Borré) (mergeados y limpios): $#si, $(total $si)"
   (( $#si )) && orden $si
-  print "No borro: $#no"
+  print "No borro: $#no, $(total $no)"
   (( $#no )) && orden $no
 fi
 
