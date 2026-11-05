@@ -1,12 +1,16 @@
 // Iniciativas: las épicas y tareas sueltas de cada producto, del archivo que escribe el TPM en cada tick
 // (~/.herdr/flota/<producto>.json, formato en el README). Clic en una épica → hoja inferior con sus
 // tareas; clic en una tarea → su página de ClickUp. Si un archivo falta o está mal, una línea lo dice.
+// Pestañas Tablero (una columna por estado, tarjetas del mismo alto) y Gantt (el plan del día por salida a
+// producción, skill gantt-flota) con los mismos archivos.
 // Vive en el panel de la derecha (el de Tasks y Files); con props {boton: true} es el botón de la barra
 // de arriba que lo abre y lo cierra, como los de Tasks y Files.
 import { View, div, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { exec, home, theme, layout, run, props } from "herdr";
-import { leer, avance, tono, hace, SIN_ARCHIVO } from "./iniciativas.js";
+import { leer, avance, esperan, ordenar, tono, hace, SIN_ARCHIVO, tablero, gantt, chip, tonoChip, pos, ahora, SALIDAS, SIN_PLAN } from "./iniciativas.js";
+
+const VISTAS = [["iniciativas", "Iniciativas"], ["tablero", "Tablero"], ["gantt", "Gantt"]];
 
 // Cada <producto>.json de ~/.herdr/flota con su hora, en una sola llamada. presupuesto.json es de Entorno.
 const LISTAR = `
@@ -27,6 +31,7 @@ export default class Iniciativas extends View {
     if (this.boton) return;
     this.productos = null; // null: leyendo; [] : ningún archivo
     this.abierta = null; // "<archivo>#<n>" de la épica en la hoja
+    this.vista = "iniciativas";
     this.ancho = 800;
     cx.timer.every(15000, (cx) => this.refresh(cx));
     this.refresh(cx);
@@ -36,7 +41,7 @@ export default class Iniciativas extends View {
     cx.spawn(async (cx) => {
       try {
         const files = JSON.parse((await exec("python3", ["-c", LISTAR])).stdout || "[]");
-        this.productos = files.map((f) => ({ ...leer(f.archivo, f.texto), at: f.at }));
+        this.productos = ordenar(files.map((f) => ({ ...leer(f.archivo, f.texto), at: f.at })));
       } catch { this.productos = [{ archivo: "", error: "No se pudo leer ~/.herdr/flota" }]; }
       // La web de Shepherdr dibuja lo mismo desde esta foto (web/flota-iniciativas, servida en /flota).
       const foto = JSON.stringify({ at: Math.floor(Date.now() / 1000), productos: this.productos });
@@ -48,7 +53,7 @@ export default class Iniciativas extends View {
   render() {
     const t = theme();
     if (this.boton) return boton(t);
-    const color = { hecha: t.ansi2, curso: t.muted, pr: t.done, bloqueada: t.blocked, cola: t.idle };
+    const color = { hecha: t.ansi2, curso: t.muted, pr: t.done, bloqueada: t.blocked, cola: t.idle, riesgo: t.working, espera: t.ansi5 };
     const ancho = this.ancho >= 620; // con espacio: barra de avance y sesión en su columna
     const punto = (estado) => div().size(6).rounded(3).bg(color[tono(estado)]);
     const barra = (a, w) => h_flex().w(w).h(5).rounded(3).overflow_hidden().bg(t.border)
@@ -56,9 +61,11 @@ export default class Iniciativas extends View {
     const textoEstado = (estado) => div().w(ancho ? 96 : 76).flex_none().text_size(12).text_color(tono(estado) === "bloqueada" ? t.blocked : t.muted).truncate().child(estado);
     const sesion = (s) => div().w(150).flex_none().text_size(11).text_color(t.muted).truncate().child(s || "—");
     const fila = (id, el) => h_flex().id(id).h(52).px(10).gap(12).items_center().rounded(6).border_b(1).border_color(t.border).cursor_pointer().hover((s) => s.bg(t.hover)).child(el);
-    const titulo = (a, b, bold) => v_flex().flex_1().min_w(0)
+    const titulo = (a, b, bold, alerta = "") => v_flex().flex_1().min_w(0)
       .child(div().text_size(12.5).when(bold, (e) => e.font_semibold()).text_color(t.foreground).truncate().child(a))
-      .child(div().text_size(11).text_color(t.dim).truncate().child(b));
+      .child(h_flex().min_w(0).gap(4).text_size(11)
+        .child(div().flex_none().text_color(t.dim).child(b))
+        .when(Boolean(alerta), (el) => el.child(div().min_w(0).text_color(t.blocked).truncate().child(`· ${alerta}`))));
 
     const lista = [];
     let sel = null;
@@ -67,13 +74,15 @@ export default class Iniciativas extends View {
       lista.push(h_flex().pt(10).pb(4).gap(8).items_baseline()
         .child(div().text_size(10.5).text_color(t.dim).child(p.producto.toUpperCase()))
         .child(div().text_size(10.5).text_color(t.dim).child(`el TPM lo escribió ${hace(p.at)}`)));
+      if (this.vista === "tablero") { lista.push(this.tablero(p, t, color, punto)); continue; }
+      if (this.vista === "gantt") { lista.push(...this.gantt(p, t, color)); continue; }
       p.epicas.forEach((e, n) => {
-        const key = `${p.archivo}#${n}`, a = avance(e);
+        const key = `${p.archivo}#${e.id || n}`, a = avance(e);
         if (key === this.abierta) sel = { e, a };
         lista.push(fila(`epica-${key}`, h_flex().flex_1().min_w(0).gap(12).items_center()
           .child(div().w(18).flex_none().text_size(14).text_color(t.muted).child("◇"))
           // Angosto: el estado de la épica va en la segunda línea, para dejarle ancho al título.
-          .child(titulo(e.titulo, `Épica · ${a.total} tareas${e.estado && !ancho ? ` · ${e.estado}` : ""}`, true))
+          .child(titulo(e.titulo, `Épica · ${a.total} tareas${e.estado && !ancho ? ` · ${e.estado}` : ""}`, true, esperan(a)))
           .when(ancho, (el) => el.child(barra(a, 160)))
           .child(div().w(36).flex_none().text_size(12).text_color(t.muted).child(`${a.hecha}/${a.total}`))
           .when(ancho, (el) => el.child(div().w(96).flex_none().text_size(12).text_color(e.estado === "en riesgo" ? t.working : t.muted).truncate().child(e.estado || ""))
@@ -95,7 +104,14 @@ export default class Iniciativas extends View {
     const root = div().id("root").relative().size_full().rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground)
       .on_size_change((size, cx) => { if (Math.abs(size.width - this.ancho) > 1) { this.ancho = size.width; cx.notify(); } })
       .child(v_flex().size_full().px(14).pt(12).pb(8)
-        .child(div().font_semibold().pb(4).child("Iniciativas"))
+        .child(h_flex().pb(4).gap(2).items_center().children(VISTAS.map(([k, label]) => {
+          const on = this.vista === k;
+          return div().id(`vista-${k}`).h(26).px(10).flex().items_center().rounded(6).text_size(12.5)
+            .bg(on ? t.selected : t.background).text_color(on ? t.foreground : t.muted).when(on, (e) => e.font_semibold())
+            .cursor_pointer().hover((s) => s.bg(on ? t.selected : t.hover).text_color(t.foreground))
+            .on_click((_e, cx) => { this.vista = k; this.abierta = null; cx.notify(); })
+            .child(label);
+        })))
         .child(v_flex().id("lista").flex_1().min_h(0).overflow_y_scroll()
           .when(this.productos === null, (el) => el.child(div().py(8).text_size(12).text_color(t.dim).child("Leyendo…")))
           .when(this.productos?.length === 0, (el) => el.child(div().py(8).text_size(12).text_color(t.dim).child(SIN_ARCHIVO)))
@@ -131,6 +147,76 @@ export default class Iniciativas extends View {
               .when(!ancho && Boolean(x.sesion), (el) => el.child(div().text_size(11).text_color(t.dim).truncate().child(x.sesion))))
             .child(textoEstado(x.estado))
             .when(ancho, (el) => el.child(sesion(x.sesion)))))));
+  }
+
+  // Tablero: con espacio, las columnas lado a lado como en el diseño; angosto, una columna debajo de otra con las
+  // tarjetas en una rejilla. Todas las tarjetas del mismo alto. Lo mergeado solo se cuenta, al final.
+  tablero(p, t, color, punto) {
+    const { columnas, merged } = tablero(p);
+    const lado = this.ancho >= 860;
+    const disp = this.ancho - 44, n = Math.max(1, Math.floor((disp + 8) / 168)), w = lado ? null : (disp - 8 * (n - 1)) / n;
+    const tarjeta = (x, k) => v_flex().id(`tarjeta-${p.archivo}-${k}`).h(112).flex_none().when(w != null, (e) => e.w(w)).p(10).gap(2)
+      .rounded(8).bg(t.background).border_1().border_color(tono(x.estado) === "bloqueada" ? t.blocked : t.border)
+      .cursor_pointer().hover((s) => s.bg(t.hover))
+      .when(/^https?:\/\//.test(x.link), (el) => el.on_click((_e, cx) => cx.open_url(x.link)))
+      .child(h_flex().gap(6).items_center().child(punto(x.estado))
+        .child(div().flex_1().min_w(0).text_size(10.5).text_color(t.dim).truncate().child(x.id || "")))
+      .child(div().h(34).flex_none().overflow_hidden().text_size(12.5).line_height("17px").text_color(t.foreground).child(x.titulo))
+      .child(div().flex_1())
+      .child(div().text_size(11).text_color(t.dim).truncate().child(x.de))
+      .child(div().text_size(11).text_color(t.muted).truncate().child(x.sesion));
+    const cabeza = (texto, num, c) => h_flex().h(22).gap(7).items_center()
+      .child(div().size(6).rounded(3).bg(c)).child(div().text_size(12.5).font_semibold().child(texto)).child(div().text_size(11).text_color(t.dim).child(String(num)));
+    const nombre = (estado) => estado[0].toUpperCase() + estado.slice(1);
+    const hechas = div().text_size(11.5).text_color(t.dim).child(`Merged · ${merged}`);
+    if (lado) return h_flex().items_start().gap(10).pt(4).pb(8)
+      .children(columnas.map((c, i) => v_flex().flex_1().min_w(0).gap(8)
+        .child(cabeza(nombre(c.estado), c.tareas.length, color[tono(c.estado)]))
+        .children(c.tareas.map((x, j) => tarjeta(x, `${i}-${j}`)))))
+      .child(v_flex().w(76).flex_none().pl(8).border_l(1).border_color(t.border).child(hechas));
+    return v_flex().gap(10).pt(4).pb(8)
+      .children(columnas.map((c, i) => v_flex().gap(6)
+        .child(cabeza(nombre(c.estado), c.tareas.length, color[tono(c.estado)]))
+        .when(c.tareas.length > 0, (el) => el.child(h_flex().flex_wrap().gap(8).children(c.tareas.map((x, j) => tarjeta(x, `${i}-${j}`)))))))
+      .child(hechas);
+  }
+
+  // Gantt: un bloque por salida a producción. Con espacio, el nombre a la izquierda y la barra a la derecha; angosto,
+  // la barra va debajo del nombre a todo el ancho, así se lee sin desplazarse. Rayas: salidas de 07, 12 y 19;
+  // naranja: ahora (Bogotá). Las salidas van en línea fina (gpui no pinta bordes punteados verticales). Barra sólida = en marcha, contorno = estimada, tenue = ya hecha.
+  gantt(p, t, color) {
+    const grupos = gantt(p);
+    if (!grupos.length) return [div().py(6).text_size(12).text_color(t.dim).child(SIN_PLAN)];
+    const ancho = this.ancho >= 620, ya = ahora(), NARANJA = "#f97316";
+    const EQUIPO = { AI: t.ansi6, Backend: t.ansi3, Frontend: t.ansi2, Acciones: t.ansi5, DevOps: t.ansi4 };
+    const pista = (f) => div().relative().h(ancho ? 40 : 14).when(ancho, (e) => e.flex_1()).min_w(0)
+      .children(SALIDAS.map((h) => div().absolute().left(`${pos(h)}%`).top(0).bottom(0).w(1).bg(t.border)))
+      .when(ya != null, (el) => el.child(div().absolute().left(`${pos(ya)}%`).top(0).bottom(0).w(2).bg(NARANJA)))
+      .when(Boolean(f?.barra), (el) => {
+        const c = color[tonoChip(f)], b = div().absolute().left(`${f.barra.x}%`).w(`${f.barra.w}%`).top(ancho ? 15 : 2).h(10).rounded(3);
+        return el.child(f.estimada && !f.hecha ? b.border_1().border_dashed().border_color(c) : b.bg(c).opacity(f.hecha ? 0.45 : 0.9));
+      });
+    const eje = h_flex().h(16).when(ancho, (e) => e.child(div().w(300).flex_none()))
+      .child(div().relative().flex_1().h_full().children([7, 10, 12, 15, 19].map((h) =>
+        div().absolute().left(`${pos(h)}%`).ml(-15).w(30).text_size(10).text_color(SALIDAS.includes(h) ? t.muted : t.dim).child(`${String(h).padStart(2, "0")}:00`))));
+    const nombre = (f) => h_flex().gap(8).items_center().min_w(0)
+      .child(div().flex_none().px(6).rounded(8).border_1().border_color(color[tonoChip(f)]).text_size(10.5).text_color(color[tonoChip(f)]).child(chip(f)))
+      .child(div().flex_1().min_w(0).text_size(12.5).text_color(f.hecha ? t.muted : t.foreground).truncate().child(f.titulo));
+    const sub = (f) => h_flex().gap(6).min_w(0).text_size(11).text_color(t.dim)
+      .when(Boolean(f.equipo), (e) => e.child(div().flex_none().text_color(EQUIPO[f.equipo] || t.muted).child(f.equipo)))
+      .child(div().flex_1().min_w(0).truncate().child(f.nota || f.de));
+    const out = [eje];
+    grupos.forEach((g, i) => {
+      out.push(div().pt(8).pb(2).text_size(10.5).font_semibold().text_color(t.muted).child(g.titulo.toUpperCase()));
+      g.filas.forEach((f, j) => {
+        const fila = (ancho
+          ? h_flex().h(44).items_center().child(v_flex().w(300).flex_none().pr(12).gap(1).child(nombre(f)).child(sub(f))).child(pista(f))
+          : v_flex().py(6).gap(3).child(nombre(f)).child(sub(f)).child(pista(f)))
+          .id(`fila-${p.archivo}-${i}-${j}`).border_t(1).border_color(t.border).cursor_pointer().hover((s) => s.bg(t.hover));
+        out.push(/^https?:\/\//.test(f.link) ? fila.on_click((_e, cx) => cx.open_url(f.link)) : fila);
+      });
+    });
+    return out;
   }
 }
 
