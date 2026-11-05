@@ -1,0 +1,57 @@
+#!/bin/zsh -f
+# herdr-flota: el vigía del disco, sin tokens. launchd lo corre cada 10 min (install.sh lo instala como
+# dev.herdr-flota.vigia). Mide el % lleno como Shepherdr y, si pasa su start_disk menos el margen, lanza
+# UN agente de limpieza (encargos/limpieza.md) directo en hc con flota-lanzar: fuera de la cola de
+# herdr-task, que se traba justo con el disco lleno.
+#
+#   flota-vigia [--en-seco]     --en-seco: el agente que lance solo mide e informa, no borra
+#
+# Nunca dos a la vez: no lanza mientras el anterior siga trabajando, ni más de una vez por hora.
+# Margen: "disco_margen" en ~/.herdr/flota/presupuesto.json (3 por defecto). Log corto en
+# ~/.herdr/flota/vigia/log. Para probar: FLOTA_VIGIA_UMBRAL=<n> fija el umbral (y fuerza --en-seco);
+# FLOTA_VIGIA_DIR, la carpeta del log.
+setopt pipefail
+export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+unset HC_TERMINAL_ID  # el agente no cuelga de quien corra el vigía: igual desde launchd que a mano
+zmodload zsh/system zsh/datetime
+zparseopts -D -F -- -en-seco=o_seco -help=o_h || exit 2
+[[ -n $o_h ]] && { sed -n '7,12p' $0; exit 0 }
+[[ -n $FLOTA_VIGIA_UMBRAL ]] && o_seco=(--en-seco)  # un umbral falso es una prueba: nunca borra de verdad
+repo=${0:a:h:h}
+dir=${FLOTA_VIGIA_DIR:-$HOME/.herdr/flota/vigia}; mkdir -p $dir
+log() { print -r -- "$(date '+%d-%m %H:%M') $*" >> $dir/log; tail -n 200 $dir/log > $dir/log.$$ && mv $dir/log.$$ $dir/log }
+: >> $dir/candado; zsystem flock -t 0 $dir/candado 2>/dev/null || { log "otro vigía está corriendo: salgo"; exit 0 }
+
+# El % lleno y el start_disk, como Shepherdr (machine.py _disks, settings.py machine_limits).
+pct=$(python3 -c '
+import os
+d = []
+for p in (os.path.expanduser("~"), "/tmp"):
+    s = os.statvfs(p); u, a = (s.f_blocks - s.f_bfree) * s.f_frsize, s.f_bavail * s.f_frsize
+    d.append(round(u * 100 / (u + a)))
+print(max(d))') || { log "no pude medir el disco"; exit 1 }
+lim=$(jq -r '[.everywhere.machine, .machines[.here // "local"].machine] | map(select(type == "object" and has("start_disk")) | .start_disk) | if length > 0 then .[-1] else 90 end' \
+  ${HERDR_TASK_SETTINGS:-$HOME/.herdr/shepherdr.json} 2>/dev/null) || lim=90
+margen=$(jq -r '.disco_margen // 3' $HOME/.herdr/flota/presupuesto.json 2>/dev/null) || margen=3
+[[ $lim == null && -z $FLOTA_VIGIA_UMBRAL ]] && { log "disco $pct %: Shepherdr no tiene límite de disco"; exit 0 }
+umbral=${FLOTA_VIGIA_UMBRAL:-$(( lim - margen ))}
+(( pct > umbral )) || { log "disco $pct % (umbral $umbral): bien"; exit 0 }
+
+# Ya hay uno: si sigue trabajando (o pregunta algo), se espera; si terminó su turno, se cierra antes del nuevo.
+for t in $(hc ls --json --label flota.rol=limpieza 2>/dev/null | jq -r '.terminals[] | select(.state == "live") | .address'); do
+  st=$(hc get $t --json 2>/dev/null | jq -r '.status.state // ""')
+  [[ $st == idle || $st == done ]] || { log "disco $pct % (umbral $umbral): la limpieza $t sigue (${st:-arrancando})"; exit 0 }
+done
+ultimo=$(cat $dir/ultimo 2>/dev/null)
+(( EPOCHSECONDS - ${ultimo:-0} < 3600 )) && { log "disco $pct % (umbral $umbral): lancé hace $(( (EPOCHSECONDS - ultimo) / 60 )) min, espero la hora"; exit 0 }
+for t in $(hc ls --json --label flota.rol=limpieza 2>/dev/null | jq -r '.terminals[].address'); do hc kill $t >/dev/null 2>&1; hc rm $t >/dev/null 2>&1; done
+
+print $EPOCHSECONDS > $dir/ultimo  # también si falla: un intento por hora como mucho
+modo=${o_seco:+en seco}; modo=${modo:-de verdad}
+encargo="Eres el agente de limpieza de disco. Tu brief: $repo/encargos/limpieza.md. Modo: $modo${o_seco:+ (bin/flota-limpiar solo con --en-seco)}. El disco está al $pct % (umbral del vigía $umbral; Shepherdr no arranca tareas pasado el $lim %). Informe: $dir/informe.md."
+if t=$($repo/bin/flota-lanzar --asiento ccp --modelo sonnet --esfuerzo medium --producto herdr-flota --rol limpieza \
+    --nombre limpieza-disco --cwd $repo --encargo "$encargo" 2>$dir/lanzar.err); then
+  log "disco $pct % > $umbral: lancé la limpieza en $t ($modo)"
+else
+  log "disco $pct % > $umbral: no pude lanzar la limpieza: $(tail -1 $dir/lanzar.err)"
+fi

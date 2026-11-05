@@ -24,6 +24,15 @@ d["children"] = [c for c in d["children"] if c.get("id") != "entorno"]
 # Entorno: columna fija a la derecha, compartida por todos los espacios.
 d["children"].append({"id": "entorno", "type": "block", "size": {"px": 260}, "min": 220, "max": 380,
                       "content": {"mod": "flota-entorno"}})
+# Iniciativas: en el panel de la derecha, donde abren Tasks y Files, con su botón al final de la barra de arriba.
+def find(n, id):
+    if n.get("id") == id: return n
+    return next((r for c in n.get("children", []) if (r := find(c, id))), None)
+find(d, "panel-body")["children"].append({"id": "iniciativas", "type": "block", "content": {"mod": "flota-iniciativas"}})
+work = find(d, "work")
+i, bar = next((i, c) for i, c in enumerate(work["children"]) if c.get("id") == "tabs")
+work["children"][i] = {"id": "tabs-row", "type": "row", "size": bar.pop("size"), "resizable": False, "children": [
+    bar, {"id": "iniciativas-boton", "type": "block", "size": {"px": 104}, "content": {"mod": "flota-iniciativas", "props": {"boton": True}}}]}
 json.dump(d, open(f"{app}/layouts/flota.json", "w"), indent=2, ensure_ascii=False)
 print("  layout  flota")
 EOF
@@ -32,9 +41,12 @@ EOF
 # con el mismo cálculo que el mod. Los datos son la foto que escribe el mod en ~/.herdr/flota/web/entorno.json;
 # un servidor local la sirve y Tailscale la publica en /flota del mismo tailnet (la app de Tailscale en macOS no
 # puede servir una carpeta). `shepherdr update` reconstruye la web solo si el plugin cambió.
-plug="${SHEPHERDR_HOME:-$HOME/.shepherdr}/plugins/flota-entorno"
-mkdir -p "$plug" && rsync -a --delete --exclude calc.js "$here/web/flota-entorno/" "$plug/" && rsync -a "$here/mods/flota-entorno/calc.js" "$plug/"
-echo "  web     flota-entorno"
+# Iniciativas igual, con iniciativas.js y la foto iniciativas.json.
+for p in flota-entorno:calc.js flota-iniciativas:iniciativas.js; do
+  name=${p%%:*} js=${p#*:} plug="${SHEPHERDR_HOME:-$HOME/.shepherdr}/plugins/$name"
+  mkdir -p "$plug" && rsync -a --delete --exclude "$js" "$here/web/$name/" "$plug/" && rsync -a "$here/mods/$name/$js" "$plug/"
+  echo "  web     $name"
+done
 if [ "$(uname)" = Darwin ]; then
   mkdir -p "$HOME/.herdr/flota/web"
   plist="$HOME/Library/LaunchAgents/dev.herdr-flota.web.plist"
@@ -54,8 +66,24 @@ PLIST
   launchctl bootout "gui/$(id -u)/dev.herdr-flota.web" 2>/dev/null || true
   launchctl bootstrap "gui/$(id -u)" "$plist"
   echo "  servicio dev.herdr-flota.web (127.0.0.1:7790)"
+  # El vigía del disco: cada 10 min, sin tokens; pasado start_disk - margen lanza el agente de limpieza.
+  mkdir -p "$HOME/.herdr/flota/vigia"
+  plist="$HOME/Library/LaunchAgents/dev.herdr-flota.vigia.plist"
+  cat > "$plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>dev.herdr-flota.vigia</string>
+  <key>ProgramArguments</key><array><string>/bin/zsh</string><string>-f</string><string>$here/bin/flota-vigia</string></array>
+  <key>StartInterval</key><integer>600</integer><key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>/dev/null</string><key>StandardErrorPath</key><string>$HOME/.herdr/flota/vigia/err</string>
+</dict></plist>
+PLIST
+  launchctl bootout "gui/$(id -u)/dev.herdr-flota.vigia" 2>/dev/null || true
+  launchctl bootstrap "gui/$(id -u)" "$plist"
+  echo "  servicio dev.herdr-flota.vigia (cada 10 min; log en ~/.herdr/flota/vigia/log)"
 fi
 command -v tailscale >/dev/null && tailscale serve --bg --set-path /flota http://127.0.0.1:7790 >/dev/null && echo "  tailnet /flota"
 command -v shepherdr >/dev/null && shepherdr update --yes --keys keep | grep -i "web app" || true
 
-echo "Listo. En Herdr: Ctrl+Shift+L hasta el layout flota. En la web: Entorno, al pie de la barra lateral."
+echo "Listo. En Herdr: Ctrl+Shift+L hasta el layout flota. En la web: Iniciativas arriba de los espacios y Entorno al pie."

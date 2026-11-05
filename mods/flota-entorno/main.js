@@ -4,7 +4,7 @@
 import { View, div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { exec, readTextFile, home, appHome, agents, theme } from "herdr";
-import { DEFAULTS, entorno, level, clamp } from "./calc.js";
+import { DEFAULTS, entorno, level, clamp, DISCO, discoStat, startDisk } from "./calc.js";
 
 // Codex no tiene barra de estado: su cupo sale del último log de sesión.
 const CODEX = `
@@ -30,7 +30,7 @@ for line in reversed(open(f).read().splitlines()[-400:]):
 `;
 
 // Los números del Mac en una sola llamada.
-const MAC = `sysctl -n hw.ncpu hw.memsize kern.memorystatus_level; top -l 2 -n 0 -s 1 | grep 'CPU usage' | tail -1; df -k "$HOME" | tail -1; herdr agent list 2>/dev/null | python3 -c "import json,sys;print('TUI', len(json.load(sys.stdin)['result']['agents']))" 2>/dev/null`;
+const MAC = `sysctl -n hw.ncpu hw.memsize kern.memorystatus_level; top -l 2 -n 0 -s 1 | grep 'CPU usage' | tail -1; python3 -c "$1"; herdr agent list 2>/dev/null | python3 -c "import json,sys;print('TUI', len(json.load(sys.stdin)['result']['agents']))" 2>/dev/null`;
 
 export default class Entorno extends View {
   init(_props, cx) {
@@ -46,6 +46,7 @@ export default class Entorno extends View {
     cx.spawn(async (cx) => {
       const flota = home() + "/.herdr/flota";
       try { this.cap = { ...DEFAULTS, ...JSON.parse((await readTextFile(flota + "/presupuesto.json")) || "{}") }; } catch { this.cap = DEFAULTS; }
+      try { this.cap = { ...this.cap, start_disk: startDisk(JSON.parse((await readTextFile(home() + "/.herdr/shepherdr.json")) || "{}")) }; } catch { this.cap = { ...this.cap, start_disk: 90 }; }
       for (const p of ["ccw", "ccp"]) {
         try {
           const d = JSON.parse((await readTextFile(`${flota}/cupos/${p}.json`)) || "null");
@@ -58,7 +59,12 @@ export default class Entorno extends View {
         } catch { this.seats[p] = null; }
       }
       try { this.seats.codex = JSON.parse((await exec("python3", ["-c", CODEX])).stdout || "null"); } catch { this.seats.codex = null; }
-      try { this.mac = parseMac((await exec("sh", ["-c", MAC])).stdout); } catch { this.mac = null; }
+      // Una muestra que falla (exec corta a los 30 s con la máquina cargada, o no puede crear el proceso) no borra
+      // la última buena: se queda, y el panel dice de cuándo es.
+      try {
+        const m = parseMac((await exec("sh", ["-c", MAC, "sh", DISCO])).stdout);
+        if (m.ramGb > 0) this.mac = { ...m, at: Math.floor(Date.now() / 1000) };
+      } catch {}
       // Disco: disco.sh tarda ~1 min, así que corre aparte y deja disco.txt; se relanza cada 30 min.
       try { this.disk = parseDisco((await readTextFile(flota + "/disco.txt")) || ""); } catch { this.disk = null; }
       if ((!this.disk || Date.now() / 1000 - this.disk.at > 1800) && Date.now() - (this.diskLaunched || 0) > 600000) {
@@ -84,12 +90,13 @@ export default class Entorno extends View {
 
     // Una sola forma de fila para todo el panel: nombre, dato gris, valor al final, barra
     // a todo el ancho y, si hace falta, una nota chica debajo.
-    const row = ({ k, pct, c, val, right, note }) => v_flex().gap(4)
+    const row = ({ k, pct, c, val, right, note, warn }) => v_flex().gap(4)
       .child(h_flex().items_baseline()
         .child(div().flex_1().text_size(12.5).text_color(t.foreground).child(k))
         .child(div().w(90).flex().justify_end().text_size(11).text_color(t.dim).child(right))
         .child(div().w(58).flex().justify_end().text_size(12).text_color(tone(pct, c)).child(val)))
       .child(bar(pct ?? 0, c))
+      .when(Boolean(warn), (el) => el.child(div().text_size(11.5).font_semibold().text_color(t.blocked).child(warn)))
       .when(Boolean(note), (el) => el.child(div().text_size(10.5).text_color(t.dim).child(note)));
 
     const e = entorno({ cap: this.cap, seats: this.seats, mac: this.mac, disk: this.disk, agents: agents().length });
@@ -104,7 +111,9 @@ export default class Entorno extends View {
         .children(e.seats.map(row)))
       .child(v_flex().gap(14)
         .child(head2("Este Mac", "Presupuesto"))
-        .when(Boolean(e.mac), (el) => el.children((e.mac || []).map(row))))
+        .when(Boolean(e.mac), (el) => el.children((e.mac || []).map(row)))
+        .when(Boolean(e.macNote), (el) => el.child(div().text_size(10.5).text_color(t.working).child(e.macNote)))
+        .when(!e.mac, (el) => el.child(div().text_size(11.5).text_color(t.dim).child("Midiendo…"))))
       .child(div().flex_1())
       .child(div().text_size(10.5).text_color(t.dim).child("La raya marca el techo. Solo se colorea lo que está cerca o encima."));
   }
@@ -131,13 +140,12 @@ function parseMac(out) {
   const freePct = /^\d+$/.test(lines[2] || "") ? Number(lines[2]) : null;
   // CPU: uso real (100 - idle) de la segunda muestra de top; la carga cuenta procesos en espera.
   const idle = (out.match(/([\d.]+)% idle/) || [])[1];
-  const df = (lines.find((l) => l.startsWith("/")) || "").split(/\s+/);
   const tui = Number((out.match(/^TUI (\d+)$/m) || [])[1] || 0);
   return {
     cpu: idle == null ? null : clamp(100 - Number(idle)),
     ramGb: memBytes / 2 ** 30,
     ramUsedGb: freePct == null ? null : (memBytes * (100 - freePct)) / 100 / 2 ** 30,
-    diskFreeGb: Math.round(Number(df[3]) / 2 ** 20),
+    ...discoStat(out),
     tui,
   };
 }
