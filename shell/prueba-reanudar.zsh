@@ -5,7 +5,7 @@
 # para no tocar la ventana real. El core de verdad no se toca.
 # Tres tareas desechables (Claude y Codex en worktrees, Claude en una carpeta con espacio, modelos
 # baratos), cada una recuerda una palabra. Reinicia ese core 3 veces: parada limpia, apagón (SIGKILL al
-# core y todo lo suyo) y apagón con 2 en medio de un `sleep 120`. Tras cada uno comprueba que las 3
+# core y todo lo suyo) y apagón con 2 en medio de un comando largo (`ping -c 120`). Tras cada uno comprueba que las 3
 # volvieron solas con su misma conversación (repiten su palabra) y en su carpeta, sin compuertas, una
 # reanudación por tarea, y sin la shell vacía de antes. Al final borra todo lo suyo.
 # Uso: zsh shell/prueba-reanudar.zsh   (unos 6 min; gasta unos pocos miles de tokens por tarea)
@@ -153,12 +153,12 @@ en_marcha; desde=$(( $(date +%s) * 1000 )); aislado; hc server stop >/dev/null; 
 # 2. Apagón.
 en_marcha; desde=$(( $(date +%s) * 1000 )); apagon; sleep 1; comprobar 2
 # 3. Apagón con dos en medio de un comando largo.
-for k in cl cx; do hc send $term[$k] "Ahora si corre un comando: ejecuta en la terminal sleep 120 y espera a que termine. Nada mas." >/dev/null; done
-# Cortar cuando los dos sleep corren dentro del core aislado.
+for k in cl cx; do hc send $term[$k] "Ahora si corre un comando: ejecuta en la terminal ping -c 120 127.0.0.1 y espera a que termine. Nada mas." >/dev/null; done
+# Cortar cuando los dos ping corren dentro del core aislado (Claude Code no deja un sleep largo en primer plano).
 arbol() { local c; for c in $(pgrep -P $1); do arbol $c; done; print $1 }
 fin=$(( SECONDS + 90 ))
-until (( $(ps -o command= -p ${(j:,:)$(arbol $(core))} | grep -c '^sleep 120') >= 2 )) || (( SECONDS > fin )); do sleep 2; done
-(( $(ps -o command= -p ${(j:,:)$(arbol $(core))} | grep -c '^sleep 120') >= 2 )) || falla "los dos sleep 120 no corrían al cortar"
+until (( $(ps -o command= -p ${(j:,:)$(arbol $(core))} | grep -c '^ping -c 120') >= 2 )) || (( SECONDS > fin )); do sleep 2; done
+(( $(ps -o command= -p ${(j:,:)$(arbol $(core))} | grep -c '^ping -c 120') >= 2 )) || falla "los dos ping no corrían al cortar"
 en_marcha; desde=$(( $(date +%s) * 1000 )); apagon; sleep 1; comprobar 3
 
 (( fallas == 0 )) && print "ok: 3 reinicios" || { print "$fallas fallas"; exit 1 }

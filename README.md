@@ -233,5 +233,5 @@ Prueba: `zsh shell/prueba-reanudar.zsh` levanta un herdr-core aislado (`HC_SOCKE
 `/tmp`; el de verdad no se toca), con su propio almacén de tareas (`HERDR_TASK_STORE`) y un `herdr-app`
 falso para no tocar la ventana. Crea 3 tareas desechables (Claude y Codex en worktrees, Claude en una
 carpeta con espacio, modelos baratos), reinicia ese core 3 veces (parada limpia, apagón y apagón con 2 en
-medio de un `sleep 120`) y tras cada vez comprueba que las 3 volvieron con su conversación y en su
+medio de un `ping -c 120`) y tras cada vez comprueba que las 3 volvieron con su conversación y en su
 carpeta, sin compuertas y una vez cada una. Borra todo lo suyo al terminar. Tarda ~6 min.
