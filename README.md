@@ -41,7 +41,7 @@ no tiene ArtifactData y no hay API pública). Por eso el TPM es el puente: en ca
 4. Entorno. ✓ (primero, por ser independiente del resto)
 5. Iniciativas, desde el archivo que escribe el TPM. ✓
 6. Decisiones, con el puente del TPM.
-7. Tablero y Gantt.
+7. Tablero y Gantt. ✓
 
 Cada paso se prueba en la app antes de seguir (`herdr-app check`, `herdr-app shot`).
 
@@ -118,6 +118,32 @@ Files. Clic en una épica → hoja inferior con sus tareas; clic en una tarea �
 fila **Iniciativas** arriba de los espacios del cajón. Un archivo que falta o está mal se dice en una línea.
 Como Entorno, la web dibuja la foto que deja el panel del escritorio (`~/.herdr/flota/web/iniciativas.json`).
 Prueba del lector: `node shell/prueba-iniciativas.mjs`.
+
+### Tablero y Gantt
+
+Dos pestañas más en el mismo panel, junto a Iniciativas (en la app y en la web), con los mismos archivos:
+
+- **Tablero:** una columna por estado de tarea (`en cola`, `en curso`, `auditoría`, `PR abierto`, `bloqueada`), tarjetas del
+  mismo alto; lo `merged` solo se cuenta. Clic en una tarjeta → su link. Angosto (el teléfono), una columna debajo de otra.
+- **Gantt:** el plan del día como lo pide la skill `gantt-flota`: un bloque por salida a producción, cada fila con su chip,
+  equipo y nota, y una barra sobre las 06:00–21:00 de Bogotá; rayas en las salidas de 07, 12 y 19 y la hora actual en
+  naranja. Barra sólida = en marcha, contorno = estimada, tenue = ya hecha. En el teléfono la barra va debajo del nombre.
+
+El Gantt usa campos **opcionales** de cada tarea (épica o suelta). Sin ellos Iniciativas y Tablero no cambian, y el Gantt
+de ese producto dice en una línea que no hay plan del día. Solo entran al Gantt las tareas con `salida`.
+
+```json
+{ "id": "86e3yk0t5", "titulo": "Refrescar la OC desde Siigo", "estado": "bloqueada",
+  "salida": "19:00", "desde": "11:00", "hasta": "17:00", "estimada": false,
+  "ritmo": "te espera", "nota": "pregunta la ventana: 60 o 90 días", "equipo": "Backend" }
+```
+
+- `salida`: `"HH:MM"` de hoy (`"12:00"`, `"19:00"`), `"mañana"` (sale «Mañana o después») u otro texto (`"7 nov"`).
+- `desde` y `hasta`: `"HH:MM"` de hoy, hora de Bogotá; la barra va de cuándo empezó a cuándo debería quedar lista.
+  Sin las dos (o mal escritas), la fila sale sin barra. `estimada: true` la dibuja en contorno.
+- `ritmo`: el chip de una palabra, `a tiempo`, `en riesgo`, `atrasado` o `te espera`. Sin él, el chip es el estado
+  (`listo` si está `merged`).
+- `nota`: una línea corta (número de PR y lo que sigue). `equipo`: `AI`, `Backend`, `Frontend`, `Acciones`, `DevOps`…
 
 ## Lanzar un asiento
 
