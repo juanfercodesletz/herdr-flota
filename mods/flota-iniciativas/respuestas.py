@@ -7,7 +7,7 @@ este archivo es el único que escribe ahí, y el TPM solo lo lee en su tick. For
   respuestas.py guardar <archivo> <id> <respuesta> [desde]   la app del escritorio (un toque en una opción)
   respuestas.py servir [puerto] [carpeta]                    la web: sirve la foto de /flota y recibe POST /respuesta
 """
-import fcntl, json, os, re, subprocess, sys, time
+import fcntl, json, os, re, shutil, subprocess, sys, time
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 
 FLOTA = os.path.expanduser("~/.herdr/flota")
@@ -52,7 +52,9 @@ def guardar(archivo, id, respuesta, desde):
 def dueño():
     """El login de Tailscale de quien es dueño de este Mac (el único que puede responder por el tailnet), o None."""
     try:
-        s = json.loads(subprocess.run(["tailscale", "status", "--json"], capture_output=True, text=True, timeout=10).stdout)
+        # launchd corre el servicio con PATH=/usr/bin:/bin:…, sin donde se instala tailscale.
+        ts = shutil.which("tailscale", path=f"{os.environ.get('PATH', '')}:/usr/local/bin:/opt/homebrew/bin") or "/Applications/Tailscale.app/Contents/MacOS/Tailscale"
+        s = json.loads(subprocess.run([ts, "status", "--json"], capture_output=True, text=True, timeout=10).stdout)
         return s["User"][str(s["Self"]["UserID"])]["LoginName"]
     except Exception:
         return None

@@ -28,7 +28,8 @@ jq '.decisiones[0].estado = "cerrada"' $here/ejemplos/veta.json > $tmp/.herdr/fl
 python3 $py guardar cerrada.json D7 Hoy app 2>/dev/null && falla "respondió una cerrada"
 
 # La web: el servidor.
-python3 $py servir $port $tmp/.herdr/flota/web & srv=$!
+# Con el PATH pelado de launchd, como el servicio dev.herdr-flota.web.
+env PATH=/usr/bin:/bin:/usr/sbin:/sbin ${commands[python3]} $py servir $port $tmp/.herdr/flota/web & srv=$!
 for i in {1..50}; do curl -s -o /dev/null http://127.0.0.1:$port/ && break; sleep 0.1; done
 echo '{"at":1}' > $tmp/.herdr/flota/web/iniciativas.json
 [[ $(curl -s http://127.0.0.1:$port/iniciativas.json) == '{"at":1}' ]] || falla "no sirve la foto"

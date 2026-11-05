@@ -324,7 +324,7 @@ function Panel({ foto, onClose, mias, setMias }: { foto: Foto | null | 'error'; 
             </Tabs>
           </div>
           {/* en el teléfono no cabe junto a las cuatro pestañas; cada producto dice cuándo escribió el TPM */}
-          {ok ? <span className="text-[0.75rem] text-fg3 tabular-nums phone:hidden">{hace(ok.at, now)}</span> : null}
+          {ok ? <span className="text-[0.75rem] text-fg3 tabular-nums max-sm:hidden">{hace(ok.at, now)}</span> : null}
           <Cerrar onClick={onClose} label="Cerrar" />
         </div>
         <div key={vista} className="min-h-0 flex-1 overflow-y-auto px-2 pb-[max(env(safe-area-inset-bottom),--spacing(4))]">
