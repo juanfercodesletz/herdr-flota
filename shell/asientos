@@ -1,0 +1,8 @@
+# Perfil de Claude preferido por carpeta, para las tareas de Shepherdr (claude() en flota.zsh).
+# Una regla por línea: <carpeta> <perfil>. Gana la primera que calce. La carpeta es un patrón de
+# zsh donde * también cruza "/", y ~ vale. Un worktree cuenta como la carpeta de su repo principal.
+# Perfiles: ccp (~/.claude) y ccw (~/.claude-work). Si el preferido está agotado y el otro no,
+# va al otro.
+~/Codes/Letz      ccw
+~/Codes/Letz/**   ccw
+*                 ccp
