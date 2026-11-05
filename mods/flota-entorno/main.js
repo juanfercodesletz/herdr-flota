@@ -3,8 +3,8 @@
 // cerca (10 puntos) o encima del techo.
 import { View, div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { exec, readTextFile, home, appHome, agents, theme } from "herdr";
-import { DEFAULTS, entorno, level, clamp, DISCO, discoStat, startDisk } from "./calc.js";
+import { exec, readTextFile, home, appHome, agents, theme, spaces } from "herdr";
+import { DEFAULTS, entorno, level, clamp, DISCO, discoStat, startDisk, mcpLineas } from "./calc.js";
 
 // Codex no tiene barra de estado: su cupo sale del último log de sesión.
 const CODEX = `
@@ -38,6 +38,8 @@ export default class Entorno extends View {
     this.seats = {};
     this.mac = null;
     this.disk = null;
+    this.perfiles = null;
+    this.abierto = null;
     cx.timer.every(15000, (cx) => this.refresh(cx));
     this.refresh(cx);
   }
@@ -71,9 +73,12 @@ export default class Entorno extends View {
         this.diskLaunched = Date.now();
         exec("sh", ["-c", `nohup sh "${appHome()}/mods/flota-entorno/disco.sh" >/dev/null 2>&1 &`]).catch(() => {});
       }
-      // La web de Shepherdr dibuja lo mismo desde esta foto (web/flota-entorno, servida en /flota).
-      const foto = JSON.stringify({ at: Math.floor(Date.now() / 1000), cap: this.cap, seats: this.seats, mac: this.mac, disk: this.disk, agents: agents().length });
-      exec("sh", ["-c", 'mkdir -p "${1%/*}" && printf %s "$2" > "$1.$$" && mv "$1.$$" "$1"', "sh", flota + "/web/entorno.json", foto]).catch(() => {});
+      // El perfil de Claude de cada terminal, del proceso que corre (perfiles.py).
+      try { this.perfiles = JSON.parse((await exec("python3", [appHome() + "/mods/flota-entorno/perfiles.py"])).stdout || "null") || this.perfiles; } catch {}
+      // La web de Shepherdr dibuja lo mismo desde estas fotos (web/flota-entorno, servidas en /flota).
+      const foto = (f, d) => exec("sh", ["-c", 'mkdir -p "${1%/*}" && printf %s "$2" > "$1.$$" && mv "$1.$$" "$1"', "sh", `${flota}/web/${f}`, JSON.stringify(d)]).catch(() => {});
+      foto("entorno.json", { at: Math.floor(Date.now() / 1000), cap: this.cap, seats: this.seats, mac: this.mac, disk: this.disk, agents: agents().length });
+      if (this.perfiles) foto("perfiles.json", this.perfiles);
       cx.notify();
     });
   }
@@ -99,6 +104,22 @@ export default class Entorno extends View {
       .when(Boolean(warn), (el) => el.child(div().text_size(11.5).font_semibold().text_color(t.blocked).child(warn)))
       .when(Boolean(note), (el) => el.child(div().text_size(10.5).text_color(t.dim).child(note)));
 
+    // Claude en el espacio abierto: el Assistant primero; clic en una fila → sus MCP.
+    const sp = spaces().find((s) => s.active);
+    const claudes = (this.perfiles?.terminales || []).filter((x) => sp && x.space === sp.id).sort((a, b) => b.assistant - a.assistant);
+    const perfil = (x) => {
+      const abierto = this.abierto === x.address;
+      return v_flex().gap(4)
+        .child(h_flex().id(`perfil-${x.address}`).items_baseline().gap(8).cursor_pointer().hover((s) => s.opacity(0.75))
+          .on_click((_e, cx) => { this.abierto = abierto ? null : x.address; cx.notify(); })
+          .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(t.foreground)
+            .child(x.assistant ? "Assistant" : x.tarea ? `${x.tarea} ${x.titulo || ""}` : x.name || x.address))
+          .child(div().flex_none().text_size(12).font_semibold().text_color(t.foreground).child(x.perfil))
+          .child(div().w(10).flex_none().text_size(10.5).text_color(t.dim).child(abierto ? "▾" : "▸")))
+        .when(abierto, (el) => el.child(v_flex().gap(3).pl(8)
+          .children(mcpLineas(x).map((l) => div().text_size(11).text_color(t.muted).child(l)))));
+    };
+
     const e = entorno({ cap: this.cap, seats: this.seats, mac: this.mac, disk: this.disk, agents: agents().length });
 
     return v_flex().id("root").size_full().bg(t.chrome).text_color(t.foreground).px(16).pt(12).pb(12).gap(18)
@@ -106,6 +127,10 @@ export default class Entorno extends View {
       .child(v_flex().gap(2)
         .child(div().text_size(15).font_semibold().child(e.head))
         .child(div().text_size(11.5).text_color(t.muted).child(e.sub)))
+      .child(v_flex().gap(10)
+        .child(h_flex().child(div().flex_1().child(lbl("Claude en este espacio"))).child(lbl("Perfil")))
+        .children(claudes.map(perfil))
+        .when(!claudes.length, (el) => el.child(div().text_size(11.5).text_color(t.dim).child(this.perfiles ? "Ningún Claude corre aquí." : "Leyendo…"))))
       .child(v_flex().gap(14)
         .child(head2("Cupo semanal", "Reinicia"))
         .children(e.seats.map(row)))

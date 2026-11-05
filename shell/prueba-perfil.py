@@ -26,13 +26,38 @@ for want, d in {"ccp": H + "/.claude", "ccw": H + "/.claude-work/", "a secas": N
     # python y no sh: macOS no deja ver el entorno de los binarios del sistema (/bin/sh)
     p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)", "CLAUDE_CONFIG_DIR=/engano"], env=env)
     try:
-        for _ in range(50):  # hasta que el hijo haya hecho exec (antes es una copia de este proceso)
+        for _ in range(200):  # hasta que el hijo haya hecho exec (antes es una copia de este proceso)
             if "/engano" in P.sh("ps", "-ww", "-o", "command=", "-p", str(p.pid)):
                 break
             time.sleep(0.02)
         igual(f"perfil del proceso ({d or 'sin CLAUDE_CONFIG_DIR'})", P.perfil(P.config_dir(p.pid)), want)
     finally:
         p.kill()
+
+# Tras un reinicio Herdr relanza con `claude --resume <id>`, sin perfil: claude() de flota.zsh lo saca del registro de
+# perfil-hook.sh, y el lector ve ese perfil en el proceso. Un claude falso (python) para no gastar una sesión.
+repo = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+with tempfile.TemporaryDirectory() as t:
+    os.makedirs(t + "/bin"); os.makedirs(t + "/perfil")
+    with open(t + "/bin/claude", "w") as f:
+        f.write(f"#!{sys.executable}\nimport time; time.sleep(30)\n")
+    os.chmod(t + "/bin/claude", 0o755)
+    for want, d in {"ccw": H + "/.claude-work", "a secas": ""}.items():
+        open(f"{t}/perfil/s-{want}", "w").write(d)
+        env = {k: v for k, v in os.environ.items() if not k.startswith("CLAUDE")}
+        env.update(PATH=t + "/bin:" + env["PATH"], FLOTA_PERFIL_DIR=t + "/perfil")
+        z = subprocess.Popen(["zsh", "-f", "-c", f"source {repo}/shell/flota.zsh; claude --resume s-{want}"], env=env)
+        try:
+            pid = ""
+            for _ in range(200):  # el claude falso: hijo de zsh, o zsh mismo si hizo exec
+                pid = next((p for p in [str(z.pid), *P.sh("pgrep", "-P", str(z.pid)).split()]
+                            if "/bin/claude --resume" in P.sh("ps", "-ww", "-o", "command=", "-p", p)), "")
+                if pid:
+                    break
+                time.sleep(0.05)
+            igual(f"reanudado con registro {d or '(vacío)'}", P.perfil(P.config_dir(pid)), want)
+        finally:
+            subprocess.run(["pkill", "-P", str(z.pid)]); z.kill()
 
 with tempfile.TemporaryDirectory() as t:
     d, cwd = t + "/perfil", t + "/repo"

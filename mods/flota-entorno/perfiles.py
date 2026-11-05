@@ -97,14 +97,16 @@ def cuenta(d):
     return (read((d or H) + "/.claude.json").get("oauthAccount") or {}).get("emailAddress")
 
 
-def ref(tarea, cache={}):
-    """'Codes-Personal-herdr-flota#13' → 'HF-13', como la llama la web."""
-    slug, _, n = (tarea or "").rpartition("#")
+def tarea(label, cache={}):
+    """'Codes-Personal-herdr-flota#13' → ('HF-13', su título), como la llama la web."""
+    slug, _, n = (label or "").rpartition("#")
     if not slug:
-        return None
+        return None, None
     if slug not in cache:
-        cache[slug] = read(f"{TAREAS}/{slug}.json").get("prefix")
-    return f"{cache[slug]}-{n}" if cache[slug] else None
+        cache[slug] = read(f"{TAREAS}/{slug}.json")
+    s = cache[slug]
+    titulo = next((t.get("title") for t in s.get("tasks") or [] if str(t.get("id")) == n), None)
+    return (f"{s['prefix']}-{n}" if s.get("prefix") else None), titulo
 
 
 def terminales():
@@ -127,10 +129,11 @@ def terminales():
         lb = g.get("labels") or {}
         d = config_dir(fg.get("pid"))
         cwd = fg.get("cwd") or g.get("cwd") or ""
+        ref, titulo = tarea(lb.get("herdr.task"))
         out.append({
             "address": t["address"], "name": g.get("name"), "where": lb.get("where"),
             "space": lb.get("herdr.space") or lb.get("herdr.task.space") or lb.get("herdr.coordinator.space"),
-            "assistant": lb.get("herdr.role") == "coordinator", "tarea": ref(lb.get("herdr.task")), "cwd": cwd,
+            "assistant": lb.get("herdr.role") == "coordinator", "tarea": ref, "titulo": titulo, "cwd": cwd,
             "perfil": perfil(d), "dir": d, "mcp": mcp(d, cwd) if d is not None else {},
             "cuenta": cuenta(d) if d is not None else None,
         })
