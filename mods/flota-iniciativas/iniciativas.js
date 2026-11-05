@@ -17,9 +17,10 @@ const porClave = (k) => (a, b) => { const x = k(a), y = k(b); return x[0] - y[0]
 const urgente = (p) => !p.error && [...p.epicas.flatMap((e) => e.tareas), ...p.sueltas].some((t) => rango(t.estado) <= 1);
 export const ordenar = (productos) => [...productos].sort(porClave((p) => [urgente(p) ? 0 : 1, 0]));
 
-// archivo: el nombre (veta.json); texto: su contenido, o null si no se pudo leer.
-// Devuelve { archivo, producto, epicas, sueltas } o { archivo, error } con el aviso en una línea.
-export function leer(archivo, texto) {
+// archivo: el nombre (veta.json); texto: su contenido, o null si no se pudo leer; respuestas: el texto de
+// ~/.herdr/flota/respuestas/<archivo> (lo que Juan respondió en Herdr), o null.
+// Devuelve { archivo, producto, epicas, sueltas, decisiones } o { archivo, error } con el aviso en una línea.
+export function leer(archivo, texto, respuestas = null) {
   if (texto == null) return { archivo, error: `${archivo}: no se pudo leer` };
   let d;
   try { d = JSON.parse(texto); } catch { return { archivo, error: `${archivo}: no es JSON válido` }; }
@@ -29,6 +30,10 @@ export function leer(archivo, texto) {
   for (const e of epicas) if (!Array.isArray(e?.tareas ?? [])) return { archivo, error: `${archivo}: las "tareas" de una épica van como lista` };
   const malo = [...epicas, ...epicas.flatMap((e) => e?.tareas ?? []), ...sueltas].find((x) => !x || typeof x.titulo !== "string" || !x.titulo);
   if (malo !== undefined) return { archivo, error: `${archivo}: hay una épica o tarea sin "titulo"${malo?.id ? ` (${malo.id})` : ""}` };
+  const decs = d.decisiones ?? [];
+  if (!Array.isArray(decs)) return { archivo, error: `${archivo}: "decisiones" va como lista` };
+  const mala = decs.find((x) => !x || !str(x.id) || typeof x.pregunta !== "string" || !x.pregunta);
+  if (mala !== undefined) return { archivo, error: `${archivo}: hay una decisión sin "id" o sin "pregunta"${mala?.id ? ` (${mala.id})` : ""}` };
   const tarea = (t) => ({
     id: str(t.id), titulo: t.titulo, estado: str(t.estado) || "en cola", link: str(t.link), sesion: str(t.sesion),
     // Opcionales, solo para el Gantt (README, «Gantt»).
@@ -41,8 +46,29 @@ export function leer(archivo, texto) {
     epicas: epicas.map((e) => ({ id: str(e.id), titulo: e.titulo, estado: str(e.estado), link: str(e.link), tareas: ordenTareas((e.tareas ?? []).map(tarea)) }))
       .sort(porClave(clave)),
     sueltas: ordenTareas(sueltas.map(tarea)),
+    decisiones: decisiones(decs, respuestas),
   };
 }
+
+// Decisiones (README, «Decisiones»): las que el TPM copia de la base del Gantt, con la respuesta que Juan dio en Herdr
+// encima. Primero las abiertas (las que frenan algo antes), después las respondidas y al final las cerradas.
+const ESTADOS = { "abierta": 0, "respondida": 1, "cerrada": 2 };
+function decisiones(decs, respuestas) {
+  let mias = {};
+  try { mias = (respuestas && JSON.parse(respuestas)) || {}; } catch { /* un archivo de respuestas roto no tapa las decisiones */ }
+  return decs.map((x) => {
+    const id = str(x.id), opciones = Array.isArray(x.opciones) ? x.opciones.map(str).filter(Boolean) : [];
+    let estado = ESTADOS[x.estado] !== undefined ? x.estado : "abierta", respuesta = str(x.respuesta);
+    const mia = mias[id]?.respuesta;
+    // Lo de Herdr manda mientras el TPM no la cierre: Juan puede cambiar de opinión antes del tick.
+    if (estado !== "cerrada" && typeof mia === "string" && opciones.includes(mia)) { estado = "respondida"; respuesta = mia; }
+    return { id, pregunta: x.pregunta, opciones, recomendada: str(x.recomendada), contexto: str(x.contexto),
+      de: str(x.de), tarea: str(x.tarea), frena: Boolean(x.frena), estado, respuesta };
+  }).sort(porClave((x) => [ESTADOS[x.estado], x.frena ? 0 : 1]));
+}
+// Las que esperan a Juan (el número de la pestaña).
+export const abiertas = (p) => (p.error ? 0 : p.decisiones.filter((x) => x.estado === "abierta").length);
+export const cuantas = (n) => `${n} abierta${n === 1 ? "" : "s"}`;
 
 const ordenTareas = (ts) => ts.sort(porClave((t) => [rango(t.estado), 0]));
 const str = (v) => (typeof v === "string" ? v : v == null ? "" : String(v));

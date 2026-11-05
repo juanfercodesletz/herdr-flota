@@ -2,17 +2,19 @@
 // (~/.herdr/flota/<producto>.json, formato en el README). Clic en una épica → hoja inferior con sus
 // tareas; clic en una tarea → su página de ClickUp. Si un archivo falta o está mal, una línea lo dice.
 // Pestañas Tablero (una columna por estado, tarjetas del mismo alto) y Gantt (el plan del día por salida a
-// producción, skill gantt-flota) con los mismos archivos.
+// producción, skill gantt-flota) con los mismos archivos. Pestaña Decisiones: las preguntas que el TPM copia de la base
+// del Gantt; un clic en una opción la guarda en ~/.herdr/flota/respuestas/<archivo> (respuestas.py), y el TPM la recoge.
 // Vive en el panel de la derecha (el de Tasks y Files); con props {boton: true} es el botón de la barra
 // de arriba que lo abre y lo cierra, como los de Tasks y Files.
 import { View, div, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { exec, home, theme, layout, run, props } from "herdr";
-import { leer, avance, esperan, ordenar, tono, hace, SIN_ARCHIVO, tablero, gantt, chip, tonoChip, pos, ahora, SALIDAS, SIN_PLAN } from "./iniciativas.js";
+import { exec, home, appHome, theme, layout, run, props } from "herdr";
+import { leer, avance, esperan, ordenar, tono, hace, SIN_ARCHIVO, tablero, gantt, chip, tonoChip, pos, ahora, SALIDAS, SIN_PLAN, abiertas, cuantas } from "./iniciativas.js";
 
-const VISTAS = [["iniciativas", "Iniciativas"], ["tablero", "Tablero"], ["gantt", "Gantt"]];
+const VISTAS = [["iniciativas", "Iniciativas"], ["tablero", "Tablero"], ["gantt", "Gantt"], ["decisiones", "Decisiones"]];
 
-// Cada <producto>.json de ~/.herdr/flota con su hora, en una sola llamada. presupuesto.json es de Entorno.
+// Cada <producto>.json de ~/.herdr/flota con su hora y sus respuestas dadas en Herdr, en una sola llamada.
+// presupuesto.json es de Entorno.
 const LISTAR = `
 import glob, json, os
 out = []
@@ -21,7 +23,9 @@ for f in sorted(glob.glob(os.path.expanduser("~/.herdr/flota/*.json"))):
     if n == "presupuesto.json": continue
     try: t = open(f, encoding="utf-8").read()
     except Exception: t = None
-    out.append({"archivo": n, "at": int(os.path.getmtime(f)), "texto": t})
+    try: r = open(os.path.join(os.path.dirname(f), "respuestas", n), encoding="utf-8").read()
+    except Exception: r = None
+    out.append({"archivo": n, "at": int(os.path.getmtime(f)), "texto": t, "respuestas": r})
 print(json.dumps(out))
 `;
 
@@ -32,22 +36,23 @@ export default class Iniciativas extends View {
     this.productos = null; // null: leyendo; [] : ningún archivo
     this.abierta = null; // "<archivo>#<n>" de la épica en la hoja
     this.vista = "iniciativas";
+    this.aviso = ""; // por qué no se guardó la última respuesta
     this.ancho = 800;
     cx.timer.every(15000, (cx) => this.refresh(cx));
     this.refresh(cx);
   }
 
-  refresh(cx) {
-    cx.spawn(async (cx) => {
-      try {
-        const files = JSON.parse((await exec("python3", ["-c", LISTAR])).stdout || "[]");
-        this.productos = ordenar(files.map((f) => ({ ...leer(f.archivo, f.texto), at: f.at })));
-      } catch { this.productos = [{ archivo: "", error: "No se pudo leer ~/.herdr/flota" }]; }
-      // La web de Shepherdr dibuja lo mismo desde esta foto (web/flota-iniciativas, servida en /flota).
-      const foto = JSON.stringify({ at: Math.floor(Date.now() / 1000), productos: this.productos });
-      exec("sh", ["-c", 'mkdir -p "${1%/*}" && printf %s "$2" > "$1.$$" && mv "$1.$$" "$1"', "sh", home() + "/.herdr/flota/web/iniciativas.json", foto]).catch(() => {});
-      cx.notify();
-    });
+  refresh(cx) { cx.spawn((cx) => this.leerTodo(cx)); }
+
+  async leerTodo(cx) {
+    try {
+      const files = JSON.parse((await exec("python3", ["-c", LISTAR])).stdout || "[]");
+      this.productos = ordenar(files.map((f) => ({ ...leer(f.archivo, f.texto, f.respuestas), at: f.at })));
+    } catch { this.productos = [{ archivo: "", error: "No se pudo leer ~/.herdr/flota" }]; }
+    // La web de Shepherdr dibuja lo mismo desde esta foto (web/flota-iniciativas, servida en /flota).
+    const foto = JSON.stringify({ at: Math.floor(Date.now() / 1000), productos: this.productos });
+    exec("sh", ["-c", 'mkdir -p "${1%/*}" && printf %s "$2" > "$1.$$" && mv "$1.$$" "$1"', "sh", home() + "/.herdr/flota/web/iniciativas.json", foto]).catch(() => {});
+    cx.notify();
   }
 
   render() {
@@ -76,6 +81,7 @@ export default class Iniciativas extends View {
         .child(div().text_size(10.5).text_color(t.dim).child(`el TPM lo escribió ${hace(p.at)}`)));
       if (this.vista === "tablero") { lista.push(this.tablero(p, t, color, punto)); continue; }
       if (this.vista === "gantt") { lista.push(...this.gantt(p, t, color)); continue; }
+      if (this.vista === "decisiones") { lista.push(...this.decisiones(p, t)); continue; }
       p.epicas.forEach((e, n) => {
         const key = `${p.archivo}#${e.id || n}`, a = avance(e);
         if (key === this.abierta) sel = { e, a };
@@ -105,18 +111,21 @@ export default class Iniciativas extends View {
       .on_size_change((size, cx) => { if (Math.abs(size.width - this.ancho) > 1) { this.ancho = size.width; cx.notify(); } })
       .child(v_flex().size_full().px(14).pt(12).pb(8)
         .child(h_flex().pb(4).gap(2).items_center().children(VISTAS.map(([k, label]) => {
-          const on = this.vista === k;
-          return div().id(`vista-${k}`).h(26).px(10).flex().items_center().rounded(6).text_size(12.5)
+          const on = this.vista === k, n = k === "decisiones" ? (this.productos || []).reduce((s, p) => s + abiertas(p), 0) : 0;
+          return div().id(`vista-${k}`).h(26).px(10).gap(6).flex().items_center().rounded(6).text_size(12.5)
             .bg(on ? t.selected : t.background).text_color(on ? t.foreground : t.muted).when(on, (e) => e.font_semibold())
             .cursor_pointer().hover((s) => s.bg(on ? t.selected : t.hover).text_color(t.foreground))
-            .on_click((_e, cx) => { this.vista = k; this.abierta = null; cx.notify(); })
-            .child(label);
+            .on_click((_e, cx) => { this.vista = k; this.abierta = null; this.aviso = ""; cx.notify(); })
+            .child(label)
+            .when(n > 0, (e) => e.child(div().px(5).h(16).flex().items_center().rounded(8).bg(t.blocked).text_color(t.background).text_size(10.5).font_semibold().child(String(n))));
         })))
         .child(v_flex().id("lista").flex_1().min_h(0).overflow_y_scroll()
           .when(this.productos === null, (el) => el.child(div().py(8).text_size(12).text_color(t.dim).child("Leyendo…")))
           .when(this.productos?.length === 0, (el) => el.child(div().py(8).text_size(12).text_color(t.dim).child(SIN_ARCHIVO)))
           .children(lista))
-        .child(div().pt(8).text_size(10.5).text_color(t.dim).child("Épicas y tareas de ClickUp · el TPM las iguala en cada tick")));
+        .child(div().pt(8).text_size(10.5).text_color(t.dim).child(this.vista === "decisiones"
+          ? "Las mismas decisiones del Gantt: respóndelas aquí o desde el celular · ★ recomendada"
+          : "Épicas y tareas de ClickUp · el TPM las iguala en cada tick")));
 
     if (!sel) return root;
     // Hoja inferior: las tareas de la épica. Se cierra con ✕ o con un clic fuera.
@@ -179,6 +188,46 @@ export default class Iniciativas extends View {
         .child(cabeza(nombre(c.estado), c.tareas.length, color[tono(c.estado)]))
         .when(c.tareas.length > 0, (el) => el.child(h_flex().flex_wrap().gap(8).children(c.tareas.map((x, j) => tarjeta(x, `${i}-${j}`)))))))
       .child(hechas);
+  }
+
+  // Decisiones: una tarjeta por pregunta, las abiertas primero (con borde rojo si frenan algo). Un clic en una opción
+  // la guarda; se puede cambiar mientras el TPM no la cierre. Sin opciones, se responde en el Gantt.
+  decisiones(p, t) {
+    if (!p.decisiones.length) return [div().py(6).text_size(12).text_color(t.dim).child("Sin decisiones abiertas.")];
+    const out = [div().pb(4).text_size(11.5).text_color(t.muted).child(`${cuantas(abiertas(p))} · el TPM recoge las respondidas en su siguiente tick`)];
+    if (this.aviso) out.push(div().pb(4).text_size(12).text_color(t.blocked).child(this.aviso));
+    p.decisiones.forEach((d, i) => {
+      const cerrada = d.estado === "cerrada", abierta = d.estado === "abierta";
+      const sub = [d.de && `pregunta ${d.de}`, d.tarea, d.contexto].filter(Boolean).join(" · ");
+      out.push(v_flex().id(`decision-${p.archivo}-${i}`).mb(8).p(12).gap(8).rounded(9).bg(t.background).border_1()
+        .border_color(abierta && d.frena ? t.blocked : t.border).when(cerrada, (e) => e.opacity(0.6))
+        .child(h_flex().gap(8).items_start()
+          .child(div().flex_none().text_size(11).font_semibold().text_color(t.ansi5).child(d.id))
+          .child(div().flex_1().min_w(0).text_size(13).font_semibold().text_color(t.foreground).child(d.pregunta))
+          .child(div().flex_none().text_size(11).text_color(abierta ? (d.frena ? t.blocked : t.muted) : t.ansi2)
+            .child(abierta ? (d.frena ? "frena" : "abierta") : d.estado)))
+        .when(Boolean(sub), (e) => e.child(div().text_size(11.5).text_color(t.dim).child(sub)))
+        .child(d.opciones.length && !cerrada
+          ? h_flex().flex_wrap().gap(6).children(d.opciones.map((o, j) => {
+            const on = o === d.respuesta;
+            return div().id(`opcion-${p.archivo}-${i}-${j}`).h(30).px(12).flex().items_center().rounded(7).text_size(12.5)
+              .bg(on ? t.foreground : t.background).text_color(on ? t.background : t.foreground).border_1().border_color(on ? t.foreground : t.border)
+              .cursor_pointer().hover((s) => s.bg(on ? t.foreground : t.hover))
+              .on_click((_e, cx) => this.responder(p.archivo, d.id, o, cx))
+              .child(o === d.recomendada ? `${o} ★` : o);
+          }))
+          : div().text_size(12).text_color(t.muted).child(cerrada ? `Respuesta: ${d.respuesta || "—"}` : "Sin opciones: respóndela en el Gantt"))
+        .when(d.estado === "respondida", (e) => e.child(div().text_size(11.5).text_color(t.ansi2).child(`Tu respuesta: ${d.respuesta} · el TPM la recoge en su siguiente tick`))));
+    });
+    return out;
+  }
+
+  responder(archivo, id, respuesta, cx) {
+    cx.spawn(async (cx) => {
+      const r = await exec("python3", [`${appHome()}/mods/flota-iniciativas/respuestas.py`, "guardar", archivo, id, respuesta, "app"]).catch((e) => ({ code: 1, stderr: String(e) }));
+      this.aviso = r.code ? (r.stderr || "No se guardó la respuesta").trim().split("\n").pop() : "";
+      await this.leerTodo(cx);
+    });
   }
 
   // Gantt: un bloque por salida a producción. Con espacio, el nombre a la izquierda y la barra a la derecha; angosto,

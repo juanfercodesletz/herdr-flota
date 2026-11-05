@@ -3,12 +3,14 @@
 // foto que escribe el panel del escritorio (~/.herdr/flota/web/iniciativas.json, servida en /flota del tailnet), ya
 // leída con iniciativas.js (copiado de mods/flota-iniciativas por install.sh). Pestañas Tablero (una columna por
 // estado) y Gantt (el plan del día por salida a producción) con la misma foto; en el teléfono, todo a lo alto.
+// Pestaña Decisiones: las preguntas que el TPM copia de la base del Gantt; tocar una opción la manda a /flota/respuesta
+// (mods/flota-iniciativas/respuestas.py), que la guarda en ~/.herdr/flota/respuestas/<archivo> para el TPM.
 import clsx from 'clsx'
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { definePlugin } from '@client/kernel.ts'
 import { Tab, Tabs } from '@client/ui.tsx'
-import { ahora, avance, chip, esperan, gantt, hace, pos, SALIDAS, SIN_ARCHIVO, SIN_PLAN, tablero, tono, tonoChip } from './iniciativas.js'
+import { ahora, avance, chip, cuantas, esperan, gantt, hace, pos, SALIDAS, SIN_ARCHIVO, SIN_PLAN, tablero, tono, tonoChip } from './iniciativas.js'
 
 interface Tarea {
   id: string; titulo: string; estado: string; link: string; sesion: string
@@ -16,7 +18,13 @@ interface Tarea {
 }
 type Fila = Tarea & { de: string; barra: { x: number; w: number } | null; hecha: boolean }
 interface Epica { id: string; titulo: string; estado: string; link: string; tareas: Tarea[] }
-type Producto = { archivo: string; at: number; error?: string; producto: string; epicas: Epica[]; sueltas: Tarea[] }
+interface Decision {
+  id: string; pregunta: string; opciones: string[]; recomendada: string; contexto: string; de: string; tarea: string
+  frena: boolean; estado: 'abierta' | 'respondida' | 'cerrada'; respuesta: string
+}
+type Producto = { archivo: string; at: number; error?: string; producto: string; epicas: Epica[]; sueltas: Tarea[]; decisiones?: Decision[] }
+/** lo que Juan tocó en esta página, por "<archivo>#<id>", hasta que la foto del escritorio lo traiga */
+type Mias = Record<string, { respuesta: string; error?: string; guardando?: boolean }>
 interface Foto { at: number; productos: Producto[] }
 
 // Los tonos del escritorio: verde lo mergeado, azul con PR, rojo lo bloqueado, gris lo demás.
@@ -24,7 +32,7 @@ const DOT: Record<string, string> = { hecha: 'bg-ready', pr: 'bg-focus', bloquea
 // El chip y el contorno de la barra del Gantt, en el mismo tono.
 const LINEA: Record<string, string> = { hecha: 'border-ready text-ready-fg', pr: 'border-focus text-focus', bloqueada: 'border-need text-need-fg', curso: 'border-fg3 text-fg2', cola: 'border-line2 text-fg3', riesgo: 'border-work text-work-fg', espera: 'border-merged text-merged' }
 const EQUIPO: Record<string, string> = { AI: 'text-focus', Backend: 'text-work-fg', Frontend: 'text-ready-fg', Acciones: 'text-merged', DevOps: 'text-fg2' }
-const VISTAS = [['iniciativas', 'Iniciativas'], ['tablero', 'Tablero'], ['gantt', 'Gantt']] as const
+const VISTAS = [['iniciativas', 'Iniciativas'], ['tablero', 'Tablero'], ['gantt', 'Gantt'], ['decisiones', 'Decisiones']] as const
 type Vista = (typeof VISTAS)[number][0]
 const BAR = ['hecha', 'pr', 'curso', 'bloqueada'] as const
 
@@ -212,7 +220,79 @@ function Gantt({ p }: { p: Producto }) {
   )
 }
 
-function Panel({ foto, onClose }: { foto: Foto | null | 'error'; onClose: () => void }) {
+/** una decisión con lo que se tocó aquí encima (mientras el TPM no la cierre) */
+function conMia(p: Producto, d: Decision, mias: Mias): Decision {
+  const m = mias[`${p.archivo}#${d.id}`]
+  return m && !m.error && d.estado !== 'cerrada' ? { ...d, estado: 'respondida', respuesta: m.respuesta } : d
+}
+const abiertasDe = (p: Producto, mias: Mias) => (p.error ? 0 : (p.decisiones ?? []).filter((d) => conMia(p, d, mias).estado === 'abierta').length)
+
+async function responder(archivo: string, id: string, respuesta: string, setMias: (f: (m: Mias) => Mias) => void) {
+  const key = `${archivo}#${id}`
+  setMias((m) => ({ ...m, [key]: { respuesta, guardando: true } }))
+  try {
+    const r = await fetch('/flota/respuesta', { method: 'POST', headers: { 'content-type': 'application/json', 'x-flota': '1' }, body: JSON.stringify({ archivo, id, respuesta }) })
+    const b = await r.json().catch(() => ({}))
+    setMias((m) => ({ ...m, [key]: r.ok ? { respuesta } : { respuesta, error: b.error || `no se guardó (${r.status})` } }))
+  } catch {
+    setMias((m) => ({ ...m, [key]: { respuesta, error: 'no se guardó: /flota no responde en este Mac' } }))
+  }
+}
+
+/** las decisiones de un producto: abiertas primero (borde rojo si frenan algo); tocar una opción la guarda y se puede
+ * cambiar mientras el TPM no la cierre */
+function Decisiones({ p, mias, setMias }: { p: Producto; mias: Mias; setMias: (f: (m: Mias) => Mias) => void }) {
+  const decs = (p.decisiones ?? []).map((d) => conMia(p, d, mias))
+  if (!decs.length) return <p className="px-2 py-1 text-[0.875rem] text-fg3">Sin decisiones abiertas.</p>
+  return (
+    <div className="flex flex-col gap-2 px-2">
+      <p className="text-[0.8125rem] text-fg2">{cuantas(abiertasDe(p, mias))} · el TPM recoge las respondidas en su siguiente tick</p>
+      {decs.map((d) => {
+        const m = mias[`${p.archivo}#${d.id}`], abierta = d.estado === 'abierta', cerrada = d.estado === 'cerrada'
+        const sub = [d.de && `pregunta ${d.de}`, d.tarea, d.contexto].filter(Boolean).join(' · ')
+        return (
+          <article key={d.id} className={clsx('rounded-xl border bg-bg p-3', abierta && d.frena ? 'border-need' : 'border-line', cerrada && 'opacity-60')}>
+            <div className="flex items-baseline gap-2">
+              <span className="shrink-0 font-mono text-[0.75rem] font-semibold text-merged">{d.id}</span>
+              <h4 className="min-w-0 flex-1 text-[0.9375rem] leading-snug font-semibold phone:text-[1rem]">{d.pregunta}</h4>
+              <span className={clsx('shrink-0 text-[0.75rem] phone:text-[0.8125rem]', abierta ? (d.frena ? 'text-need-fg' : 'text-fg3') : 'text-ready-fg')}>
+                {abierta ? (d.frena ? 'frena' : 'abierta') : d.estado}
+              </span>
+            </div>
+            {sub ? <p className="mt-1 text-[0.8125rem] text-fg3 phone:text-[0.875rem]">{sub}</p> : null}
+            {d.opciones.length && !cerrada ? (
+              <div className="mt-2.5 flex flex-wrap gap-2" role="group" aria-label={`Respuesta a ${d.id}`}>
+                {d.opciones.map((o) => {
+                  const on = o === d.respuesta
+                  return (
+                    <button
+                      key={o}
+                      type="button"
+                      aria-pressed={on}
+                      disabled={m?.guardando}
+                      onClick={() => !on && responder(p.archivo, d.id, o, setMias)}
+                      className={clsx('press min-h-11 rounded-lg border px-3.5 text-[0.9375rem] disabled:opacity-60', on ? 'border-fg bg-fg text-bg' : 'border-line2 text-fg hover:bg-hover')}
+                    >
+                      {o}{o === d.recomendada ? ' ★' : ''}
+                    </button>
+                  )
+                })}
+              </div>
+            ) : (
+              <p className="mt-2 text-[0.875rem] text-fg2">{cerrada ? `Respuesta: ${d.respuesta || '—'}` : 'Sin opciones: respóndela en el Gantt'}</p>
+            )}
+            {m?.error ? <p className="mt-2 text-[0.8125rem] text-need-fg">{m.error}</p> : null}
+            {d.estado === 'respondida' && !m?.error ? (
+              <p className="mt-2 text-[0.8125rem] text-ready-fg">{m?.guardando ? 'Guardando…' : `Tu respuesta: ${d.respuesta} · el TPM la recoge en su siguiente tick`}</p>
+            ) : null}
+          </article>
+        )
+      })}
+    </div>
+  )
+}
+
+function Panel({ foto, onClose, mias, setMias }: { foto: Foto | null | 'error'; onClose: () => void; mias: Mias; setMias: (f: (m: Mias) => Mias) => void }) {
   const [abierta, setAbierta] = useState<string | null>(null) // "<archivo>#<id de la épica>": sigue a la foto nueva aunque cambie el orden
   const [vista, setVista] = useState<Vista>('iniciativas')
   useEffect(() => {
@@ -222,6 +302,7 @@ function Panel({ foto, onClose }: { foto: Foto | null | 'error'; onClose: () => 
   }, [abierta, onClose])
   const now = Date.now() / 1000
   const ok = foto && foto !== 'error' ? foto : null
+  const pendientes = ok ? ok.productos.reduce((n, p) => n + abiertasDe(p, mias), 0) : 0
   const sel = ok?.productos.flatMap((p) => (p.error ? [] : p.epicas.map((e, i) => [`${p.archivo}#${e.id || i}`, e] as const))).find(([k]) => k === abierta)?.[1]
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center" onClick={onClose}>
@@ -233,13 +314,17 @@ function Panel({ foto, onClose }: { foto: Foto | null | 'error'; onClose: () => 
       >
         <div className="flex items-center gap-2 px-4 pt-3 pb-2">
           <div className="min-w-0 flex-1">
-            <Tabs label="Vista">
+            <Tabs label="Vista" className="flex w-full">
               {VISTAS.map(([k, l]) => (
-                <Tab key={k} on={vista === k} onClick={() => { setVista(k); setAbierta(null) }}>{l}</Tab>
+                <Tab key={k} fill on={vista === k} onClick={() => { setVista(k); setAbierta(null) }}>
+                  {l}
+                  {k === 'decisiones' && pendientes ? <span className="ml-1 inline-grid h-4 min-w-4 place-items-center rounded-full bg-need px-1 align-[0.0625rem] text-[0.6875rem] font-semibold text-bg tabular-nums">{pendientes}</span> : null}
+                </Tab>
               ))}
             </Tabs>
           </div>
-          {ok ? <span className="text-[0.75rem] text-fg3 tabular-nums">{hace(ok.at, now)}</span> : null}
+          {/* en el teléfono no cabe junto a las cuatro pestañas; cada producto dice cuándo escribió el TPM */}
+          {ok ? <span className="text-[0.75rem] text-fg3 tabular-nums max-sm:hidden">{hace(ok.at, now)}</span> : null}
           <Cerrar onClick={onClose} label="Cerrar" />
         </div>
         <div key={vista} className="min-h-0 flex-1 overflow-y-auto px-2 pb-[max(env(safe-area-inset-bottom),--spacing(4))]">
@@ -257,6 +342,7 @@ function Panel({ foto, onClose }: { foto: Foto | null | 'error'; onClose: () => 
                 </h3>
                 {vista === 'tablero' ? <Tablero p={p} /> : null}
                 {vista === 'gantt' ? <Gantt p={p} /> : null}
+                {vista === 'decisiones' ? <Decisiones p={p} mias={mias} setMias={setMias} /> : null}
                 {vista === 'iniciativas' ? <>
                 {p.epicas.map((e, i) => {
                   const a = avance(e)
@@ -294,7 +380,9 @@ function Panel({ foto, onClose }: { foto: Foto | null | 'error'; onClose: () => 
 // Entorno y Add machine.
 function Abridor() {
   const [open, setOpen] = useState(false)
+  const [mias, setMias] = useState<Mias>({})
   const foto = useFoto()
+  const pendientes = foto && foto !== 'error' ? foto.productos.reduce((n, p) => n + abiertasDe(p, mias), 0) : 0
   // un punto rojo si hay tareas bloqueadas
   const bloqueadas = foto && foto !== 'error' && foto.productos.some((p) => !p.error && [...p.epicas.flatMap((e) => e.tareas), ...p.sueltas].some((t) => tono(t.estado) === 'bloqueada'))
   return (
@@ -310,9 +398,10 @@ function Abridor() {
           <path d="M12 3 3 8l9 5 9-5-9-5Z" /><path d="m3 13 9 5 9-5" />
         </svg>
         <span className="flex-1">Iniciativas</span>
-        {bloqueadas ? <span className="size-2 rounded-full bg-need" aria-label="hay tareas bloqueadas" /> : null}
+        {pendientes ? <span className="grid h-5 min-w-5 place-items-center rounded-full bg-need px-1.5 text-[0.75rem] font-semibold text-bg tabular-nums" aria-label={`${pendientes} decisiones te esperan`}>{pendientes}</span> : null}
+        {bloqueadas && !pendientes ? <span className="size-2 rounded-full bg-need" aria-label="hay tareas bloqueadas" /> : null}
       </button>
-      {open ? <Panel foto={foto} onClose={() => setOpen(false)} /> : null}
+      {open ? <Panel foto={foto} onClose={() => setOpen(false)} mias={mias} setMias={setMias} /> : null}
     </>
   )
 }
