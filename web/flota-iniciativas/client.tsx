@@ -23,7 +23,7 @@ interface Decision {
   id: string; pregunta: string; opciones: string[]; recomendada: string; contexto: string; de: string; tarea: string
   frena: boolean; estado: 'abierta' | 'respondida' | 'cerrada'; respuesta: string
 }
-type Producto = { archivo: string; at: number; error?: string; producto: string; espacios?: string[]; epicas: Epica[]; sueltas: Tarea[]; decisiones?: Decision[] }
+type Producto = { archivo: string; at: number; error?: string; aviso?: string; producto: string; espacios?: string[]; epicas: Epica[]; sueltas: Tarea[]; decisiones?: Decision[] }
 /** lo que Juan tocó en esta página, por "<archivo>#<id>", hasta que la foto del escritorio lo traiga */
 type Mias = Record<string, { respuesta: string; error?: string; guardando?: boolean }>
 /** total: cuántos productos hay en todos los espacios (los de `productos` son los del espacio abierto) */
@@ -343,6 +343,7 @@ function Panel({ foto, onClose, mias, setMias }: { foto: Foto | null | 'error'; 
                 <h3 className="px-2 pt-2 pb-1 text-[0.6875rem] tracking-wide text-fg3 uppercase phone:text-[0.75rem]">
                   {p.producto} <span className="normal-case tracking-normal">· el TPM lo escribió {hace(p.at, now)}</span>
                 </h3>
+                {p.aviso ? <p className="px-2 pb-1 text-[0.8125rem] text-need-fg">{p.aviso}</p> : null}
                 {vista === 'tablero' ? <Tablero p={p} /> : null}
                 {vista === 'gantt' ? <Gantt p={p} /> : null}
                 {vista === 'decisiones' ? <Decisiones p={p} mias={mias} setMias={setMias} /> : null}

@@ -83,6 +83,7 @@ export default class Iniciativas extends View {
       lista.push(h_flex().pt(10).pb(4).gap(8).items_baseline()
         .child(div().text_size(10.5).text_color(t.dim).child(p.producto.toUpperCase()))
         .child(div().text_size(10.5).text_color(t.dim).child(`el TPM lo escribió ${hace(p.at)}`)));
+      if (p.aviso) lista.push(div().pb(4).text_size(12).text_color(t.blocked).child(p.aviso));
       if (this.vista === "tablero") { lista.push(this.tablero(p, t, color, punto)); continue; }
       if (this.vista === "gantt") { lista.push(...this.gantt(p, t, color)); continue; }
       if (this.vista === "decisiones") { lista.push(...this.decisiones(p, t)); continue; }

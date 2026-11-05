@@ -32,20 +32,20 @@ export const SIN_INICIATIVAS = "Este espacio no tiene iniciativas";
 
 // archivo: el nombre (veta.json); texto: su contenido, o null si no se pudo leer; respuestas: el texto de
 // ~/.herdr/flota/respuestas/<archivo> (lo que Juan respondió en Herdr), o null.
-// Devuelve { archivo, producto, espacios, epicas, sueltas, decisiones } o { archivo, espacios?, error } con el aviso en una línea.
+// Devuelve { archivo, producto, espacios, aviso?, epicas, sueltas, decisiones } o { archivo, espacios?, error } con el aviso en una línea.
 export function leer(archivo, texto, respuestas = null) {
   if (texto == null) return { archivo, error: `${archivo}: no se pudo leer` };
   let d;
   try { d = JSON.parse(texto); } catch { return { archivo, error: `${archivo}: no es JSON válido` }; }
   // Un archivo que se lee pero está mal sigue en sus espacios; uno que ni se lee, solo en Home.
-  // Cada uno, "sp…" o { "id": "sp…", "nombre": "…" } (el nombre es solo para leer a ojo). Un nombre suelto no se adivina.
+  // Cada uno, "sp…" o { "id": "sp…", "nombre": "…" } (el nombre es solo para leer a ojo). Un nombre suelto no se
+  // adivina: queda fuera y el producto lleva un `aviso` de una línea (se ve en Home y en los espacios que sí van por id).
   const lista = Array.isArray(d?.espacios) ? d.espacios : [];
   const espacios = lista.map((e) => (typeof e === "string" ? e : e?.id)).filter(esId);
   const nombres = lista.filter((e) => !esId(typeof e === "string" ? e : e?.id)).map((e) => (typeof e === "string" ? e : str(e?.nombre) || "?"));
   const mal = (m) => ({ archivo, espacios, error: `${archivo}: ${m}` });
   if (!d || typeof d !== "object" || typeof d.producto !== "string" || !d.producto) return mal(`falta "producto"`);
   if (d.espacios != null && !Array.isArray(d.espacios)) return mal('"espacios" va como lista de ids de espacio (sp…)');
-  if (nombres.length) return mal(`"espacios" lleva ids de espacio (sp…, en herdr-app ls), no nombres: ${nombres.map((n) => `«${n}»`).join(", ")}`);
   const epicas = d.epicas ?? [], sueltas = d.sueltas ?? [];
   if (!Array.isArray(epicas) || !Array.isArray(sueltas)) return mal(`"epicas" y "sueltas" van como listas`);
   for (const e of epicas) if (!Array.isArray(e?.tareas ?? [])) return mal(`las "tareas" de una épica van como lista`);
@@ -65,6 +65,7 @@ export function leer(archivo, texto, respuestas = null) {
     archivo,
     producto: d.producto,
     espacios,
+    ...(nombres.length ? { aviso: `${archivo}: "espacios" lleva ids de espacio (sp…, en herdr-app ls), no nombres: ${nombres.map((n) => `«${n}»`).join(", ")}` } : {}),
     epicas: epicas.map((e) => ({ id: str(e.id), titulo: e.titulo, estado: str(e.estado), link: str(e.link), tareas: ordenTareas((e.tareas ?? []).map(tarea)) }))
       .sort(porClave(clave)),
     sueltas: ordenTareas(sueltas.map(tarea)),
