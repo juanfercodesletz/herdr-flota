@@ -39,7 +39,7 @@ no tiene ArtifactData y no hay API pública). Por eso el TPM es el puente: en ca
    `flota.padre`, `flota.tarea` y `flota.asiento` en cada terminal. En curso: lanzador ✓.
 3. Árbol de productos.
 4. Entorno. ✓ (primero, por ser independiente del resto)
-5. Iniciativas, desde el archivo que escribe el TPM.
+5. Iniciativas, desde el archivo que escribe el TPM. ✓
 6. Decisiones, con el puente del TPM.
 7. Tablero y Gantt.
 
@@ -85,6 +85,39 @@ Cada paso se prueba en la app antes de seguir (`herdr-app check`, `herdr-app sho
    ```
 
    Los registros quedan en `~/.herdr/flota/perfil/<session_id>`. Prueba: `zsh shell/prueba.zsh`.
+
+## Iniciativas
+
+El TPM de cada producto escribe en cada tick `~/.herdr/flota/<producto>.json` (de ClickUp, que Herdr no lee).
+Ejemplo completo: `ejemplos/veta.json`.
+
+```json
+{
+  "producto": "Veta",
+  "epicas": [
+    { "id": "86e3yj2qg", "titulo": "Órdenes de compra en causaciones", "estado": "a tiempo",
+      "link": "https://app.clickup.com/t/86e3yj2qg",
+      "tareas": [{ "id": "86e3yk0t6", "titulo": "Traer OC al detalle", "estado": "en curso",
+                   "link": "https://app.clickup.com/t/86e3yk0t6", "sesion": "autor-86e3yk0t6" }] }
+  ],
+  "sueltas": [{ "id": "86e3z0aln", "titulo": "Reintento de envío a Alanube", "estado": "en cola",
+                "link": "https://app.clickup.com/t/86e3z0aln" }]
+}
+```
+
+- `producto` y `titulo` son obligatorios; lo demás puede faltar. Títulos en lenguaje de producto.
+- `id`: el de ClickUp. Es el que va en `flota-lanzar --tarea`, así la sesión lleva `flota.tarea=<id>`.
+- `sesion`: el nombre del terminal en hc que la trabaja, solo mientras la hay.
+- Estado de tarea: `en cola`, `en curso`, `auditoría`, `PR abierto`, `bloqueada` o `merged` (cada uno con su color
+  y su parte en la barra de la épica); otro texto se muestra tal cual, como en curso. El de la épica es libre
+  (`a tiempo`, `en riesgo` en ámbar).
+- Escríbelo atómico (a `<archivo>.$$` y `mv`). `presupuesto.json` es de Entorno y no cuenta como producto.
+
+En la app: botón **Iniciativas** al final de la barra de arriba; abre en el panel de la derecha, donde Tasks y
+Files. Clic en una épica → hoja inferior con sus tareas; clic en una tarea → ClickUp. En la web (el iPhone):
+fila **Iniciativas** arriba de los espacios del cajón. Un archivo que falta o está mal se dice en una línea.
+Como Entorno, la web dibuja la foto que deja el panel del escritorio (`~/.herdr/flota/web/iniciativas.json`).
+Prueba del lector: `node shell/prueba-iniciativas.mjs`.
 
 ## Lanzar un asiento
 
