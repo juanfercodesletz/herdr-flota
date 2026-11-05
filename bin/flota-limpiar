@@ -1,0 +1,141 @@
+#!/bin/zsh -f
+# herdr-flota: libera disco solo en lo seguro y lista lo demás con su tamaño. Lo corre el agente de
+# limpieza (encargos/limpieza.md), que lanza bin/flota-vigia.
+#
+#   flota-limpiar [--en-seco] [uv] [docker] [worktrees]
+#
+# --en-seco: mide e informa, sin borrar nada. Sin partes, las tres.
+# Seguro, y lo único que borra:
+#   uv         `uv cache prune` (nunca --force: hay procesos de uv vivos que la usan; si está tomada, lo dice)
+#   docker     imágenes colgadas y la caché de builds; nunca volúmenes ni contenedores
+#   worktrees  de ~/.herdr/worktrees: mergeados, sin cambios sin commitear, sin nadie trabajando dentro y
+#              quietos hace 24 h, con `git worktree remove` (que además se niega si quedan cambios)
+# Lo demás va en «No borro», con su tamaño y por qué.
+setopt pipefail extendedglob
+export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$HOME/.orbstack/bin:$PATH"
+zparseopts -D -F -- -en-seco=o_seco -help=o_h || exit 2
+[[ -n $o_h ]] && { sed -n '5,13p' $0; exit 0 }
+seco=${o_seco:+1}
+partes=(${@:-uv docker worktrees}); (( $# )) || partes=(uv docker worktrees)
+wts=${FLOTA_WORKTREES:-$HOME/.herdr/worktrees}
+edad_h=${FLOTA_LIMPIAR_EDAD_H:-24}
+
+# El disco como lo mide Shepherdr (machine.py _disks): el más lleno entre home y /tmp.
+disco() {
+  python3 -c '
+import os
+d = []
+for p in (os.path.expanduser("~"), "/tmp"):
+    s = os.statvfs(p); u, a = (s.f_blocks - s.f_bfree) * s.f_frsize, s.f_bavail * s.f_frsize
+    d.append((round(u * 100 / (u + a)), a // 2**20))
+print(*max(d))'
+}
+gb() { printf '%.1f GB' $(( $1 / 1048576.0 )) }  # KB -> «1.2 GB»
+kb() { nice -n 19 du -sk -I .venv $1 2>/dev/null | cut -f1 }  # los .venv comparten bloques con la caché de uv
+
+read pct0 libre0 <<<$(disco)
+print "Disco: $pct0 % lleno, $(gb $(( libre0 * 1024 ))) libres."
+(( seco )) && print "En seco: mido e informo, no borro nada."
+
+if (( ${partes[(I)uv]} )); then
+  print "\n== Caché de uv =="
+  dir=$(uv cache dir 2>/dev/null)
+  if [[ -z $dir || ! -d $dir ]]; then print "No hay caché de uv."
+  else
+    print "Ocupa $(gb $(kb $dir)) en $dir."
+    if (( seco )); then print "Correría: uv cache prune (solo lo que nadie usa; nunca --force). uv no dice antes cuánto libera: no lo cuentes como liberado."
+    else
+      # uv espera para siempre si otro uv tiene la caché: se mira su salida y se corta en cuanto lo dice.
+      out=$(mktemp)
+      uv cache prune >$out 2>&1 &
+      pid=$!
+      for _ in {1..${FLOTA_UV_ESPERA_S:-120}}; do
+        kill -0 $pid 2>/dev/null || break
+        grep -qi "in-use\|in use\|waiting" $out && break
+        sleep 1
+      done
+      if kill -0 $pid 2>/dev/null; then
+        kill $pid 2>/dev/null; wait $pid 2>/dev/null
+        print "Tomada: otro proceso de uv la está usando (whatsapp-mcp, herdr-agent-bridge…). No la toco."
+      else
+        wait $pid; print "uv cache prune: $(tail -1 $out)"
+      fi
+      rm -f $out
+    fi
+  fi
+fi
+
+if (( ${partes[(I)docker]} )); then
+  print "\n== Docker =="
+  if ! docker info >/dev/null 2>&1; then print "Docker apagado: nada que medir."
+  else
+    df_v=$(docker system df -v --format json 2>/dev/null)
+    colgadas=$(docker images -f dangling=true --format '{{.ID}} {{.Size}}')
+    if [[ -n $colgadas ]]; then print "Imágenes colgadas: ${#${(f)colgadas}} (${(j:, :)${(f)colgadas}##* })"
+    else print "Imágenes colgadas: ninguna"
+    fi
+    print "Caché de builds: $(docker system df --format '{{.Type}}|{{.Size}}' | awk -F'|' '$1=="Build Cache"{print $2}')"
+    if (( seco )); then print "Correría: docker image prune -f y docker builder prune -af."
+    else
+      print "docker image prune: $(docker image prune -f 2>&1 | tail -1)"
+      print "docker builder prune: $(docker builder prune -af 2>&1 | tail -1)"
+    fi
+    print "No borro (volúmenes, con su tamaño; «en uso» = algún contenedor los monta):"
+    print -r -- $df_v | jq -r '.Volumes | sort_by(.Size | capture("(?<n>[0-9.]+)(?<u>[kMGT]?B)") | (.n | tonumber) * ({"B":1,"kB":1e3,"MB":1e6,"GB":1e9,"TB":1e12}[.u])) | reverse | .[] | "  \(.Size)\t\(.Name)\(if .Links != "0" then " (en uso)" else "" end)"' 2>/dev/null | head -15
+    print "  Imágenes sin contenedor (no colgadas): $(docker system df --format '{{.Type}}|{{.Reclaimable}}' | awk -F'|' '$1=="Images"{print $2}') que se podrían recuperar."
+  fi
+fi
+
+if (( ${partes[(I)worktrees]} )); then
+  print "\n== Worktrees en ${wts/#$HOME/~} =="
+  # Quién trabaja dónde: la carpeta actual de cada proceso vivo (agentes, shells, servidores).
+  cwds=(${(f)"$(lsof -a -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')"})
+  # Un worktree vive en <repo>/<tarea>; una carpeta de primer nivel con .git es un worktree o un repo suelto.
+  wl=()
+  for d in $wts/*(/N); do [[ -e $d/.git ]] && wl+=($d) || wl+=($d/*(/N)); done
+  typeset -a si no
+  nada() { no+=("$n"$'\t'"$nombre — $1") }  # no se borra, y por qué
+  for w in $wl; do
+    n=$(kb $w); nombre=${w#$wts/}
+    common=$(git -C $w rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
+    gitdir=$(git -C $w rev-parse --path-format=absolute --git-dir 2>/dev/null)
+    if [[ ! -e $w/.git ]]; then nada "no es un worktree de git"; continue; fi
+    if [[ -z $common ]]; then nada "su repo ya no está (worktree roto)"; continue; fi
+    if [[ $common == $gitdir ]]; then nada "es un repo, no un worktree"; continue; fi
+    if (( ${cwds[(I)$w(|/*)]} )); then nada "hay un proceso trabajando ahí"; continue; fi
+    cambios=(${(f)"$(GIT_OPTIONAL_LOCKS=0 git -C $w status --porcelain 2>/dev/null)"})
+    if (( $#cambios )); then nada "$#cambios sin commitear (${${cambios[1]}[4,-1]}${cambios[2]:+…})"; continue; fi
+    viejo=($gitdir/{index,HEAD,logs/HEAD}(Nmh-$edad_h))
+    if (( $#viejo )); then nada "usado hace menos de $edad_h h"; continue; fi
+    # Mergeado: HEAD ya está en la rama principal del remoto, o es la punta de un PR mergeado (squash).
+    # Las dos cosas implican que no queda ningún commit sin pushear.
+    head=$(git -C $w rev-parse HEAD 2>/dev/null) rama=$(git -C $w symbolic-ref -q --short HEAD) dentro=
+    for r in origin/HEAD origin/main origin/master origin/develop; do
+      git -C $w rev-parse -q --verify $r >/dev/null && git -C $w merge-base --is-ancestor $head $r 2>/dev/null && { dentro=$r; break }
+    done
+    if [[ -z $dentro && -n $rama ]] && (cd $w && GH_PROMPT_DISABLED=1 gh pr list --head $rama --state merged --json headRefOid --jq '.[].headRefOid' 2>/dev/null) | grep -qx $head; then
+      dentro="su PR mergeado"
+    fi
+    if [[ -z $dentro ]]; then
+      sin=$(git -C $w rev-list --count $head --not --remotes 2>/dev/null)
+      (( sin )) && nada "$sin commits sin pushear" || nada "sin mergear"
+      continue
+    fi
+    if (( seco )); then si+=("$n"$'\t'"$nombre (en $dentro)")
+    elif err=$(git --git-dir=$common worktree remove $w 2>&1); then si+=("$n"$'\t'"$nombre (en $dentro)")
+    else nada "git worktree remove se negó: ${err//$'\n'/ }"
+    fi
+  done
+  orden() { for x in ${(f)"$(print -rl -- $@ | sort -t$'\t' -k1,1nr)"}; do print -r -- "  $(gb ${x%%$'\t'*})  ${x#*$'\t'}"; done }
+  total() { local s=0 x; for x in $@; do (( s += ${x%%$'\t'*} )); done; gb $s }
+  print "$( (( seco )) && print Borraría || print Borré) (mergeados y limpios): $#si, $(total $si)"
+  (( $#si )) && orden $si
+  print "No borro: $#no, $(total $no)"
+  (( $#no )) && orden $no
+fi
+
+read pct1 libre1 <<<$(disco)
+print "\n== Resultado =="
+if (( seco )); then print "En seco: no borré nada. Disco: $pct1 % lleno, $(gb $(( libre1 * 1024 ))) libres."
+else print "Liberé $(gb $(( (libre1 - libre0) * 1024 ))) (lo que ganó el disco). Disco: $pct1 % lleno, $(gb $(( libre1 * 1024 ))) libres."
+fi

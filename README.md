@@ -59,9 +59,12 @@ Cada paso se prueba en la app antes de seguir (`herdr-app check`, `herdr-app sho
 
    Codex no necesita nada: Entorno lee su cupo del último log en `~/.codex/sessions`.
 4. Los techos se cambian en `~/.herdr/flota/presupuesto.json`, por ejemplo
-   `{"ccw": 90, "ccp": 90, "codex": 100, "cpu": 85, "ram": 90, "disco_flota_gb": 100, "disco_min_gb": 20, "sesiones": 100}`.
-   El disco cuenta lo que ocupa la flota (worktrees sin `.venv`, caché de uv, Docker de OrbStack),
-   medido cada 30 min; `disco_min_gb` es el libre bajo el cual la fila se pone roja igual.
+   `{"ccw": 90, "ccp": 90, "codex": 100, "cpu": 85, "ram": 90, "sesiones": 100}`.
+   El disco tiene un solo límite, el de Shepherdr: el `start_disk` de `~/.herdr/shepherdr.json`
+   (`everywhere.machine.start_disk`, 90 si no está). Entorno mide el % lleno como Shepherdr (el más lleno
+   entre home y /tmp) y, al pasarlo, se pone rojo y dice que Shepherdr no arranca tareas nuevas. Lo que
+   ocupa la flota (worktrees sin `.venv`, caché de uv, Docker de OrbStack, medido cada 30 min) va de dato
+   debajo. Prueba: `zsh shell/prueba-disco.zsh` (Entorno y Shepherdr paran en el mismo punto).
 5. Entorno en la web de Shepherdr (el iPhone): `install.sh` deja el plugin en `~/.shepherdr/plugins/flota-entorno`
    (`web/flota-entorno` + el `calc.js` del mod), levanta el servicio launchd `dev.herdr-flota.web` (sirve
    `~/.herdr/flota/web` en 127.0.0.1:7790), publica `/flota` con `tailscale serve` y corre `shepherdr update` para
@@ -70,7 +73,20 @@ Cada paso se prueba en la app antes de seguir (`herdr-app check`, `herdr-app sho
    escritorio cada 15 s: con Herdr cerrado o sin el layout `flota`, la web avisa que el dato es viejo.
    En el teléfono: cajón de espacios → **Entorno**, al pie. Se quita con
    `launchctl bootout gui/$(id -u)/dev.herdr-flota.web` y `tailscale serve --set-path /flota off`.
-6. Para que cada sesión de Claude vuelva con su perfil tras un reinicio (Herdr las relanza con
+6. El vigía del disco: `install.sh` levanta el servicio launchd `dev.herdr-flota.vigia`, que cada 10 min corre
+   `bin/flota-vigia` (sin tokens). Si el disco pasa `start_disk − disco_margen` (3 por defecto, en
+   `presupuesto.json`), lanza **un** agente de limpieza en hc con `flota-lanzar` (ccp, Sonnet), fuera de la cola
+   de herdr-task, que se traba justo con el disco lleno. Nunca dos a la vez: no relanza mientras el anterior
+   trabaja, ni más de una vez por hora. Log: `~/.herdr/flota/vigia/log`.
+   El agente sigue `encargos/limpieza.md`: corre `bin/flota-limpiar`, que borra **solo** lo seguro (`uv cache
+   prune` sin `--force`, imágenes colgadas y caché de builds de Docker, y worktrees de `~/.herdr/worktrees`
+   mergeados, limpios, sin nadie dentro y quietos 24 h, con `git worktree remove`), lista lo demás con su
+   tamaño y avisa a Juan con `herdr-task alert`. Informe en `~/.herdr/flota/vigia/informe.md`.
+   `bin/flota-limpiar --en-seco` mide e informa sin borrar; `FLOTA_VIGIA_UMBRAL=0 bin/flota-vigia` prueba el
+   vigía con un umbral falso (y siempre en seco). Pruebas: `zsh shell/prueba-limpieza.zsh` (worktrees
+   desechables) y `zsh shell/prueba-vigia.zsh` (un agente real en seco, ~5 min).
+   Se quita con `launchctl bootout gui/$(id -u)/dev.herdr-flota.vigia`.
+7. Para que cada sesión de Claude vuelva con su perfil tras un reinicio (Herdr las relanza con
    `claude --resume <id>`, sin perfil), carga la función en `~/.zshrc`:
 
    ```sh

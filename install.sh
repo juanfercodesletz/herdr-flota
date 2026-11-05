@@ -66,6 +66,22 @@ PLIST
   launchctl bootout "gui/$(id -u)/dev.herdr-flota.web" 2>/dev/null || true
   launchctl bootstrap "gui/$(id -u)" "$plist"
   echo "  servicio dev.herdr-flota.web (127.0.0.1:7790)"
+  # El vigía del disco: cada 10 min, sin tokens; pasado start_disk - margen lanza el agente de limpieza.
+  mkdir -p "$HOME/.herdr/flota/vigia"
+  plist="$HOME/Library/LaunchAgents/dev.herdr-flota.vigia.plist"
+  cat > "$plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>dev.herdr-flota.vigia</string>
+  <key>ProgramArguments</key><array><string>/bin/zsh</string><string>-f</string><string>$here/bin/flota-vigia</string></array>
+  <key>StartInterval</key><integer>600</integer><key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>/dev/null</string><key>StandardErrorPath</key><string>$HOME/.herdr/flota/vigia/err</string>
+</dict></plist>
+PLIST
+  launchctl bootout "gui/$(id -u)/dev.herdr-flota.vigia" 2>/dev/null || true
+  launchctl bootstrap "gui/$(id -u)" "$plist"
+  echo "  servicio dev.herdr-flota.vigia (cada 10 min; log en ~/.herdr/flota/vigia/log)"
 fi
 command -v tailscale >/dev/null && tailscale serve --bg --set-path /flota http://127.0.0.1:7790 >/dev/null && echo "  tailnet /flota"
 command -v shepherdr >/dev/null && shepherdr update --yes --keys keep | grep -i "web app" || true
