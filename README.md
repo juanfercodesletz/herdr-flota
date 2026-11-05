@@ -86,6 +86,11 @@ Cada paso se prueba en la app antes de seguir (`herdr-app check`, `herdr-app sho
 
    Los registros quedan en `~/.herdr/flota/perfil/<session_id>`. Prueba: `zsh shell/prueba.zsh`.
 
+   **Reparto de las tareas de Shepherdr:** cada `claude` que arranca una tarea toma el perfil de su carpeta
+   según `shell/asientos` (Letz y sus worktrees → ccw, lo demás → ccp); si ese está en o sobre su techo de
+   5 h o 7 d y el otro no, usa el otro. Con los dos agotados arranca en el de la carpeta y, cuando Claude se
+   detiene por cuota, el Backup agent de Shepherdr pasa la tarea a Codex. Reanudar nunca cambia de perfil.
+
 ## Lanzar un asiento
 
 `bin/flota-lanzar` abre una sesión de agente en herdr-core (solo `hc`, nunca la Herdr de terminal):
