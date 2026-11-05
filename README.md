@@ -226,6 +226,30 @@ Si quien pregunta es una tarea de Shepherdr que ya está en «Needs you», se re
 Pruebas: `node shell/prueba-iniciativas.mjs` (lector) y `zsh shell/prueba-decisiones.zsh` (guardar y servidor, en un
 HOME temporal).
 
+## Perfil de Claude de cada chat
+
+Cada chat y cada tarea con Claude dice en qué perfil corre: `ccp` (`CLAUDE_CONFIG_DIR=~/.claude`), `ccw`
+(`~/.claude-work`) o `a secas` (sin la variable: la config global de `~/.claude.json`, con otros MCP).
+
+- **Escritorio:** en Entorno, «Claude en este espacio»: el Assistant del espacio abierto y sus tareas, cada uno con su
+  perfil. Clic en una fila → sus MCP.
+- **Web (el iPhone):** un chip «Claude ccp» en la cabecera del Assistant (en el teléfono, al final del subtítulo) y
+  otro sobre la caja de mensaje de cada tarea. Tocarlo abre una hoja con sus MCP.
+- **De dónde sale:** `mods/flota-entorno/perfiles.py` lee el `CLAUDE_CONFIG_DIR` del proceso `claude` que corre en
+  cada terminal de hc (su entorno, con `ps`), no el mapa `shell/asientos`. Tras un reinicio, `claude()` de `flota.zsh`
+  relanza cada sesión con su perfil y el lector lo ve igual. Si el entorno no se puede leer, dice `?`.
+- **Los MCP:** solo los nombres (nunca env ni cabeceras), por origen: del perfil (`mcpServers` de su `.claude.json`),
+  de esta carpeta (su entrada en `projects`), del proyecto (`.mcp.json` de la carpeta y las de arriba) y de los plugins
+  activos. Los conectores de claude.ai son de la cuenta: se dice cuál.
+- Entorno lo mide cada 15 s y deja la foto en `~/.herdr/flota/web/perfiles.json` (`/flota/perfiles.json`), como el
+  resto: con el panel cerrado, la hoja de la web avisa que el dato es viejo.
+
+Los Assistants de los espacios corren **a secas**: Shepherdr los lanza con `sh -c "claude …"`, fuera de zsh, así que ni
+`claude()` ni `shell/asientos` los tocan (el mapa rige solo para las tareas).
+
+Prueba: `python3 shell/prueba-perfil.py` (tres procesos reales, ccp, ccw y a secas, con un argumento trampa; un
+`claude --resume` reanudado con su registro; y una config con secretos de la que solo salen los nombres).
+
 ## Lanzar un asiento
 
 `bin/flota-lanzar` abre una sesión de agente en herdr-core (solo `hc`, nunca la Herdr de terminal):

@@ -7,6 +7,7 @@ import { createPortal } from 'react-dom'
 import { definePlugin } from '@client/kernel.ts'
 import { FootButton } from '@client/ui.tsx'
 import { ago, clamp, entorno, level } from './calc.js'
+import { MarcaEspacio, MarcaTarea } from './perfil.tsx'
 
 type Level = 'none' | 'ok' | 'near' | 'over'
 interface Row { k: string; pct?: number | null; c: number; val: string; right: string; note?: string; warn?: string }
@@ -134,5 +135,7 @@ export default definePlugin({
   name: 'flota-entorno',
   setup(reg) {
     reg.sideFoot.push({ order: 50, View: Boton })
+    reg.placeMark.push({ order: 50, View: MarcaEspacio })
+    reg.composerAbove.push({ order: 9, View: MarcaTarea })
   },
 })

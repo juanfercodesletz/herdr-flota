@@ -109,3 +109,12 @@ export function disco(m, d, lim = 90, now = Date.now() / 1000) {
     warn: over ? `Pasa el ${lim} %: Shepherdr no arranca tareas nuevas` : "",
   };
 }
+
+// Perfiles de Claude (perfiles.py): las líneas de MCP de un terminal, iguales en el escritorio y en la web.
+const MCP_DE = { usuario: "Del perfil", local: "De esta carpeta", proyecto: "Del proyecto", plugins: "De plugins" };
+export function mcpLineas(x) {
+  const l = Object.entries(x.mcp || {}).map(([k, v]) => `${MCP_DE[k] || k}: ${v.join(", ")}`);
+  if (!l.length) l.push(x.perfil === "?" ? "No se pudo leer su entorno" : "Ningún MCP en su config");
+  if (x.cuenta) l.push(`Conectores de claude.ai: los de ${x.cuenta}`);
+  return l;
+}
