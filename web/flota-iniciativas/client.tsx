@@ -8,7 +8,7 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { definePlugin } from '@client/kernel.ts'
 import { Tab, Tabs } from '@client/ui.tsx'
-import { ahora, avance, chip, gantt, hace, pos, SALIDAS, SIN_ARCHIVO, SIN_PLAN, tablero, tono, tonoChip } from './iniciativas.js'
+import { ahora, avance, chip, esperan, gantt, hace, pos, SALIDAS, SIN_ARCHIVO, SIN_PLAN, tablero, tono, tonoChip } from './iniciativas.js'
 
 interface Tarea {
   id: string; titulo: string; estado: string; link: string; sesion: string
@@ -213,7 +213,7 @@ function Gantt({ p }: { p: Producto }) {
 }
 
 function Panel({ foto, onClose }: { foto: Foto | null | 'error'; onClose: () => void }) {
-  const [abierta, setAbierta] = useState<string | null>(null) // "<archivo>#<n>": sigue a la foto nueva
+  const [abierta, setAbierta] = useState<string | null>(null) // "<archivo>#<id de la épica>": sigue a la foto nueva aunque cambie el orden
   const [vista, setVista] = useState<Vista>('iniciativas')
   useEffect(() => {
     const key = (e: KeyboardEvent) => e.key === 'Escape' && (abierta ? setAbierta(null) : onClose())
@@ -222,7 +222,7 @@ function Panel({ foto, onClose }: { foto: Foto | null | 'error'; onClose: () => 
   }, [abierta, onClose])
   const now = Date.now() / 1000
   const ok = foto && foto !== 'error' ? foto : null
-  const sel = ok?.productos.flatMap((p) => (p.error ? [] : p.epicas.map((e, i) => [`${p.archivo}#${i}`, e] as const))).find(([k]) => k === abierta)?.[1]
+  const sel = ok?.productos.flatMap((p) => (p.error ? [] : p.epicas.map((e, i) => [`${p.archivo}#${e.id || i}`, e] as const))).find(([k]) => k === abierta)?.[1]
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center" onClick={onClose}>
       <div
@@ -261,12 +261,13 @@ function Panel({ foto, onClose }: { foto: Foto | null | 'error'; onClose: () => 
                 {p.epicas.map((e, i) => {
                   const a = avance(e)
                   return (
-                    <button key={e.id || i} type="button" onClick={() => setAbierta(`${p.archivo}#${i}`)} aria-haspopup="dialog" className="press flex min-h-14 w-full items-center gap-3 rounded-row border-b border-line px-2 text-left hover:bg-hover">
+                    <button key={e.id || i} type="button" onClick={() => setAbierta(`${p.archivo}#${e.id || i}`)} aria-haspopup="dialog" className="press flex min-h-14 w-full items-center gap-3 rounded-row border-b border-line px-2 text-left hover:bg-hover">
                       <svg viewBox="0 0 24 24" className="size-[18px] shrink-0 text-fg2" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M12 3 3 8l9 5 9-5-9-5Z" /><path d="m3 13 9 5 9-5" /></svg>
                       <span className="flex min-w-0 flex-1 flex-col">
                         <span className="truncate text-[0.875rem] font-semibold phone:text-[0.9375rem]">{e.titulo}</span>
                         <span className="truncate text-[0.75rem] text-fg3 phone:text-[0.8125rem]">
                           Épica · {a.total} tareas{e.estado ? <span className={e.estado === 'en riesgo' ? 'text-work-fg' : ''}> · {e.estado}</span> : null}
+                          {esperan(a) ? <span className="text-need-fg"> · {esperan(a)}</span> : null}
                         </span>
                       </span>
                       <span className="flex w-16 shrink-0 flex-col items-end gap-1">

@@ -8,7 +8,7 @@
 import { View, div, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { exec, home, theme, layout, run, props } from "herdr";
-import { leer, avance, tono, hace, SIN_ARCHIVO, tablero, gantt, chip, tonoChip, pos, ahora, SALIDAS, SIN_PLAN } from "./iniciativas.js";
+import { leer, avance, esperan, ordenar, tono, hace, SIN_ARCHIVO, tablero, gantt, chip, tonoChip, pos, ahora, SALIDAS, SIN_PLAN } from "./iniciativas.js";
 
 const VISTAS = [["iniciativas", "Iniciativas"], ["tablero", "Tablero"], ["gantt", "Gantt"]];
 
@@ -41,7 +41,7 @@ export default class Iniciativas extends View {
     cx.spawn(async (cx) => {
       try {
         const files = JSON.parse((await exec("python3", ["-c", LISTAR])).stdout || "[]");
-        this.productos = files.map((f) => ({ ...leer(f.archivo, f.texto), at: f.at }));
+        this.productos = ordenar(files.map((f) => ({ ...leer(f.archivo, f.texto), at: f.at })));
       } catch { this.productos = [{ archivo: "", error: "No se pudo leer ~/.herdr/flota" }]; }
       // La web de Shepherdr dibuja lo mismo desde esta foto (web/flota-iniciativas, servida en /flota).
       const foto = JSON.stringify({ at: Math.floor(Date.now() / 1000), productos: this.productos });
@@ -61,9 +61,11 @@ export default class Iniciativas extends View {
     const textoEstado = (estado) => div().w(ancho ? 96 : 76).flex_none().text_size(12).text_color(tono(estado) === "bloqueada" ? t.blocked : t.muted).truncate().child(estado);
     const sesion = (s) => div().w(150).flex_none().text_size(11).text_color(t.muted).truncate().child(s || "—");
     const fila = (id, el) => h_flex().id(id).h(52).px(10).gap(12).items_center().rounded(6).border_b(1).border_color(t.border).cursor_pointer().hover((s) => s.bg(t.hover)).child(el);
-    const titulo = (a, b, bold) => v_flex().flex_1().min_w(0)
+    const titulo = (a, b, bold, alerta = "") => v_flex().flex_1().min_w(0)
       .child(div().text_size(12.5).when(bold, (e) => e.font_semibold()).text_color(t.foreground).truncate().child(a))
-      .child(div().text_size(11).text_color(t.dim).truncate().child(b));
+      .child(h_flex().min_w(0).gap(4).text_size(11)
+        .child(div().flex_none().text_color(t.dim).child(b))
+        .when(Boolean(alerta), (el) => el.child(div().min_w(0).text_color(t.blocked).truncate().child(`· ${alerta}`))));
 
     const lista = [];
     let sel = null;
@@ -75,12 +77,12 @@ export default class Iniciativas extends View {
       if (this.vista === "tablero") { lista.push(this.tablero(p, t, color, punto)); continue; }
       if (this.vista === "gantt") { lista.push(...this.gantt(p, t, color)); continue; }
       p.epicas.forEach((e, n) => {
-        const key = `${p.archivo}#${n}`, a = avance(e);
+        const key = `${p.archivo}#${e.id || n}`, a = avance(e);
         if (key === this.abierta) sel = { e, a };
         lista.push(fila(`epica-${key}`, h_flex().flex_1().min_w(0).gap(12).items_center()
           .child(div().w(18).flex_none().text_size(14).text_color(t.muted).child("◇"))
           // Angosto: el estado de la épica va en la segunda línea, para dejarle ancho al título.
-          .child(titulo(e.titulo, `Épica · ${a.total} tareas${e.estado && !ancho ? ` · ${e.estado}` : ""}`, true))
+          .child(titulo(e.titulo, `Épica · ${a.total} tareas${e.estado && !ancho ? ` · ${e.estado}` : ""}`, true, esperan(a)))
           .when(ancho, (el) => el.child(barra(a, 160)))
           .child(div().w(36).flex_none().text_size(12).text_color(t.muted).child(`${a.hecha}/${a.total}`))
           .when(ancho, (el) => el.child(div().w(96).flex_none().text_size(12).text_color(e.estado === "en riesgo" ? t.working : t.muted).truncate().child(e.estado || ""))
@@ -152,17 +154,17 @@ export default class Iniciativas extends View {
   tablero(p, t, color, punto) {
     const { columnas, merged } = tablero(p);
     const lado = this.ancho >= 860;
-    const disp = this.ancho - 28, n = Math.max(1, Math.floor((disp + 8) / 168)), w = lado ? null : (disp - 8 * (n - 1)) / n;
-    const tarjeta = (x, k) => v_flex().id(`tarjeta-${p.archivo}-${k}`).h(104).flex_none().when(w != null, (e) => e.w(w)).p(10).gap(3)
+    const disp = this.ancho - 44, n = Math.max(1, Math.floor((disp + 8) / 168)), w = lado ? null : (disp - 8 * (n - 1)) / n;
+    const tarjeta = (x, k) => v_flex().id(`tarjeta-${p.archivo}-${k}`).h(112).flex_none().when(w != null, (e) => e.w(w)).p(10).gap(2)
       .rounded(8).bg(t.background).border_1().border_color(tono(x.estado) === "bloqueada" ? t.blocked : t.border)
       .cursor_pointer().hover((s) => s.bg(t.hover))
       .when(/^https?:\/\//.test(x.link), (el) => el.on_click((_e, cx) => cx.open_url(x.link)))
       .child(h_flex().gap(6).items_center().child(punto(x.estado))
         .child(div().flex_1().min_w(0).text_size(10.5).text_color(t.dim).truncate().child(x.id || "")))
-      .child(div().h(34).overflow_hidden().text_size(12.5).line_height(1.35).text_color(t.foreground).child(x.titulo))
+      .child(div().h(34).flex_none().overflow_hidden().text_size(12.5).line_height("17px").text_color(t.foreground).child(x.titulo))
       .child(div().flex_1())
       .child(div().text_size(11).text_color(t.dim).truncate().child(x.de))
-      .child(div().h(15).text_size(11).text_color(t.muted).truncate().child(x.sesion));
+      .child(div().text_size(11).text_color(t.muted).truncate().child(x.sesion));
     const cabeza = (texto, num, c) => h_flex().h(22).gap(7).items_center()
       .child(div().size(6).rounded(3).bg(c)).child(div().text_size(12.5).font_semibold().child(texto)).child(div().text_size(11).text_color(t.dim).child(String(num)));
     const nombre = (estado) => estado[0].toUpperCase() + estado.slice(1);
@@ -181,14 +183,14 @@ export default class Iniciativas extends View {
 
   // Gantt: un bloque por salida a producción. Con espacio, el nombre a la izquierda y la barra a la derecha; angosto,
   // la barra va debajo del nombre a todo el ancho, así se lee sin desplazarse. Rayas: salidas de 07, 12 y 19;
-  // naranja: ahora (Bogotá). Barra sólida = en marcha, contorno = estimada, tenue = ya hecha.
+  // naranja: ahora (Bogotá). Las salidas van en línea fina (gpui no pinta bordes punteados verticales). Barra sólida = en marcha, contorno = estimada, tenue = ya hecha.
   gantt(p, t, color) {
     const grupos = gantt(p);
     if (!grupos.length) return [div().py(6).text_size(12).text_color(t.dim).child(SIN_PLAN)];
     const ancho = this.ancho >= 620, ya = ahora(), NARANJA = "#f97316";
     const EQUIPO = { AI: t.ansi6, Backend: t.ansi3, Frontend: t.ansi2, Acciones: t.ansi5, DevOps: t.ansi4 };
     const pista = (f) => div().relative().h(ancho ? 40 : 14).when(ancho, (e) => e.flex_1()).min_w(0)
-      .children(SALIDAS.map((h) => div().absolute().left(`${pos(h)}%`).top(0).bottom(0).w(0).border_l(1).border_dashed().border_color(t.dim)))
+      .children(SALIDAS.map((h) => div().absolute().left(`${pos(h)}%`).top(0).bottom(0).w(1).bg(t.border)))
       .when(ya != null, (el) => el.child(div().absolute().left(`${pos(ya)}%`).top(0).bottom(0).w(2).bg(NARANJA)))
       .when(Boolean(f?.barra), (el) => {
         const c = color[tonoChip(f)], b = div().absolute().left(`${f.barra.x}%`).w(`${f.barra.w}%`).top(ancho ? 15 : 2).h(10).rounded(3);

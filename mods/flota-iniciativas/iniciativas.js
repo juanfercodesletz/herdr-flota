@@ -6,6 +6,17 @@
 const TONOS = { "en cola": "cola", "en curso": "curso", "auditoría": "curso", "PR abierto": "pr", "bloqueada": "bloqueada", "merged": "hecha" };
 export const tono = (estado) => TONOS[estado] || "curso";
 
+// Orden por lo que pide acción: bloqueada → PR abierto → auditoría → en curso (y lo desconocido) → en cola → merged.
+const RANGOS = { "bloqueada": 0, "PR abierto": 1, "auditoría": 2, "en cola": 4, "merged": 5 };
+export const rango = (estado) => RANGOS[estado] ?? 3;
+// Épicas: por su tarea más urgente (sin tareas, al final); a igualdad, atrasada y en riesgo antes que a tiempo.
+const EPICAS = { "atrasada": 0, "en riesgo": 1 };
+const clave = (e) => [Math.min(6, ...e.tareas.map((t) => rango(t.estado))), EPICAS[e.estado] ?? 2];
+const porClave = (k) => (a, b) => { const x = k(a), y = k(b); return x[0] - y[0] || x[1] - y[1]; }; // sort es estable
+// Productos: primero los que tienen algo bloqueado o en PR. Lo usa quien junta los archivos (el panel del escritorio).
+const urgente = (p) => !p.error && [...p.epicas.flatMap((e) => e.tareas), ...p.sueltas].some((t) => rango(t.estado) <= 1);
+export const ordenar = (productos) => [...productos].sort(porClave((p) => [urgente(p) ? 0 : 1, 0]));
+
 // archivo: el nombre (veta.json); texto: su contenido, o null si no se pudo leer.
 // Devuelve { archivo, producto, epicas, sueltas } o { archivo, error } con el aviso en una línea.
 export function leer(archivo, texto) {
@@ -27,11 +38,13 @@ export function leer(archivo, texto) {
   return {
     archivo,
     producto: d.producto,
-    epicas: epicas.map((e) => ({ id: str(e.id), titulo: e.titulo, estado: str(e.estado), link: str(e.link), tareas: (e.tareas ?? []).map(tarea) })),
-    sueltas: sueltas.map(tarea),
+    epicas: epicas.map((e) => ({ id: str(e.id), titulo: e.titulo, estado: str(e.estado), link: str(e.link), tareas: ordenTareas((e.tareas ?? []).map(tarea)) }))
+      .sort(porClave(clave)),
+    sueltas: ordenTareas(sueltas.map(tarea)),
   };
 }
 
+const ordenTareas = (ts) => ts.sort(porClave((t) => [rango(t.estado), 0]));
 const str = (v) => (typeof v === "string" ? v : v == null ? "" : String(v));
 
 // Avance de una épica: cuántas tareas hay en cada tono, para la barra y el «3/10».
@@ -39,8 +52,10 @@ export function avance(epica) {
   const n = { hecha: 0, curso: 0, pr: 0, bloqueada: 0, cola: 0 };
   for (const t of epica.tareas) n[tono(t.estado)]++;
   const sesiones = epica.tareas.filter((t) => t.sesion && tono(t.estado) !== "hecha").length;
-  return { ...n, total: epica.tareas.length, sesiones };
+  return { ...n, total: epica.tareas.length, sesiones, esperan: n.bloqueada + n.pr };
 }
+// «2 te esperan»: las tareas bloqueadas o con PR abierto de una épica; "" si no hay.
+export const esperan = (a) => (a.esperan ? `${a.esperan} te espera${a.esperan > 1 ? "n" : ""}` : "");
 
 export function hace(at, now = Date.now() / 1000) {
   const s = Math.max(0, now - at);
