@@ -1,20 +1,31 @@
 // Iniciativas en la web de Shepherdr: una fila arriba de los espacios (barra lateral; en el teléfono, el cajón) que
 // abre la lista de épicas y tareas sueltas; tocar una épica abre la hoja inferior con sus tareas. Los datos son la
 // foto que escribe el panel del escritorio (~/.herdr/flota/web/iniciativas.json, servida en /flota del tailnet), ya
-// leída con iniciativas.js (copiado de mods/flota-iniciativas por install.sh).
+// leída con iniciativas.js (copiado de mods/flota-iniciativas por install.sh). Pestañas Tablero (una columna por
+// estado) y Gantt (el plan del día por salida a producción) con la misma foto; en el teléfono, todo a lo alto.
 import clsx from 'clsx'
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { definePlugin } from '@client/kernel.ts'
-import { avance, hace, tono, SIN_ARCHIVO } from './iniciativas.js'
+import { Tab, Tabs } from '@client/ui.tsx'
+import { ahora, avance, chip, gantt, hace, pos, SALIDAS, SIN_ARCHIVO, SIN_PLAN, tablero, tono, tonoChip } from './iniciativas.js'
 
-interface Tarea { id: string; titulo: string; estado: string; link: string; sesion: string }
+interface Tarea {
+  id: string; titulo: string; estado: string; link: string; sesion: string
+  salida: string; desde: string; hasta: string; estimada: boolean; ritmo: string; nota: string; equipo: string
+}
+type Fila = Tarea & { de: string; barra: { x: number; w: number } | null; hecha: boolean }
 interface Epica { id: string; titulo: string; estado: string; link: string; tareas: Tarea[] }
 type Producto = { archivo: string; at: number; error?: string; producto: string; epicas: Epica[]; sueltas: Tarea[] }
 interface Foto { at: number; productos: Producto[] }
 
 // Los tonos del escritorio: verde lo mergeado, azul con PR, rojo lo bloqueado, gris lo demás.
-const DOT: Record<string, string> = { hecha: 'bg-ready', pr: 'bg-focus', bloqueada: 'bg-need', curso: 'bg-fg2', cola: 'bg-line2' }
+const DOT: Record<string, string> = { hecha: 'bg-ready', pr: 'bg-focus', bloqueada: 'bg-need', curso: 'bg-fg2', cola: 'bg-line2', riesgo: 'bg-work', espera: 'bg-merged' }
+// El chip y el contorno de la barra del Gantt, en el mismo tono.
+const LINEA: Record<string, string> = { hecha: 'border-ready text-ready-fg', pr: 'border-focus text-focus', bloqueada: 'border-need text-need-fg', curso: 'border-fg3 text-fg2', cola: 'border-line2 text-fg3', riesgo: 'border-work text-work-fg', espera: 'border-merged text-merged' }
+const EQUIPO: Record<string, string> = { AI: 'text-focus', Backend: 'text-work-fg', Frontend: 'text-ready-fg', Acciones: 'text-merged', DevOps: 'text-fg2' }
+const VISTAS = [['iniciativas', 'Iniciativas'], ['tablero', 'Tablero'], ['gantt', 'Gantt']] as const
+type Vista = (typeof VISTAS)[number][0]
 const BAR = ['hecha', 'pr', 'curso', 'bloqueada'] as const
 
 function useFoto() {
@@ -99,8 +110,111 @@ function Hoja({ e, onClose }: { e: Epica; onClose: () => void }) {
   )
 }
 
+/** una tarjeta del tablero: todas del mismo alto; con link abre ClickUp */
+function Tarjeta({ t }: { t: Tarea & { de: string } }) {
+  const body = (
+    <>
+      <span className="flex items-center gap-1.5">
+        <span className={clsx('size-1.5 shrink-0 rounded-full', DOT[tono(t.estado)])} />
+        <span className="truncate font-mono text-[0.6875rem] text-fg3">{t.id}</span>
+      </span>
+      <span className="line-clamp-2 text-[0.875rem] leading-snug">{t.titulo}</span>
+      <span className="mt-auto truncate text-[0.75rem] text-fg3">{t.de}</span>
+      <span className="h-4 truncate text-[0.75rem] leading-4 text-fg2">{t.sesion}</span>
+    </>
+  )
+  const cls = clsx('flex h-[7.5rem] min-w-0 flex-col gap-1 rounded-lg border bg-bg p-2.5 text-left', tono(t.estado) === 'bloqueada' ? 'border-need' : 'border-line')
+  return isLink(t.link) ? <a href={t.link} target="_blank" rel="noreferrer" className={clsx(cls, 'press hover:bg-hover')}>{body}</a> : <div className={cls}>{body}</div>
+}
+
+function Tablero({ p }: { p: Producto }) {
+  const { columnas, merged } = tablero(p) as { columnas: { estado: string; tareas: (Tarea & { de: string })[] }[]; merged: number }
+  return (
+    <div className="flex flex-col gap-3 px-2">
+      {columnas.map((c) => (
+        <div key={c.estado}>
+          <h4 className="flex items-center gap-2 py-1.5 text-[0.8125rem] font-semibold phone:text-[0.875rem]">
+            <span className={clsx('size-2 rounded-full', DOT[tono(c.estado)])} />
+            {c.estado[0].toUpperCase() + c.estado.slice(1)}
+            <span className="font-normal text-fg3 tabular-nums">{c.tareas.length}</span>
+          </h4>
+          {c.tareas.length ? (
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-2">
+              {c.tareas.map((t, i) => <Tarjeta key={t.id || i} t={t} />)}
+            </div>
+          ) : null}
+        </div>
+      ))}
+      <p className="text-[0.8125rem] text-fg3">Merged · {merged}</p>
+    </div>
+  )
+}
+
+/** la pista de una fila: rayas en las salidas de 07, 12 y 19, la hora actual en naranja y la barra
+ * (sólida en marcha, contorno si es estimada, tenue si ya está hecha) */
+function Pista({ f, ya }: { f: Fila; ya: number | null }) {
+  const t = tonoChip(f)
+  return (
+    <span className="relative block h-3">
+      {SALIDAS.map((h) => <span key={h} className="absolute inset-y-0 border-l border-dashed border-line2" style={{ left: `${pos(h)}%` }} />)}
+      {f.barra ? (
+        <span
+          className={clsx('absolute inset-y-0.5 rounded-[3px]', f.estimada && !f.hecha ? clsx('border border-dashed', LINEA[t]) : clsx(DOT[t], f.hecha ? 'opacity-45' : 'opacity-90'))}
+          style={{ left: `${f.barra.x}%`, width: `${f.barra.w}%` }}
+        />
+      ) : null}
+      {ya != null ? <span className="absolute inset-y-0 w-0.5 bg-orange-500" style={{ left: `${pos(ya)}%` }} /> : null}
+    </span>
+  )
+}
+
+/** el Gantt del día (skill gantt-flota): un bloque por salida; cada fila con su chip, su nombre, equipo y nota, y la
+ * barra debajo a todo el ancho, así se lee a 390 px sin desplazarse */
+function Gantt({ p }: { p: Producto }) {
+  const grupos = gantt(p) as { salida: string; titulo: string; filas: Fila[] }[]
+  if (!grupos.length) return <p className="px-2 py-1 text-[0.875rem] text-fg3">{SIN_PLAN}</p>
+  const ya = ahora()
+  return (
+    <div className="px-2">
+      <div className="relative h-4 text-[0.6875rem] text-fg3 tabular-nums" aria-hidden="true">
+        {[7, 10, 12, 15, 19].map((h) => (
+          <span key={h} className={clsx('absolute -translate-x-1/2', SALIDAS.includes(h) && 'text-fg2')} style={{ left: `${pos(h)}%` }}>{String(h).padStart(2, '0')}:00</span>
+        ))}
+      </div>
+      {grupos.map((g) => (
+        <section key={g.salida}>
+          <h4 className="pt-3 pb-1 text-[0.6875rem] font-semibold tracking-wide text-fg2 uppercase phone:text-[0.75rem]">{g.titulo}</h4>
+          {g.filas.map((f, i) => {
+            const t = tonoChip(f)
+            const body = (
+              <>
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className={clsx('shrink-0 rounded-full border px-1.5 text-[0.6875rem] leading-4 phone:text-[0.75rem]', LINEA[t])}>{chip(f)}</span>
+                  <span className={clsx('truncate text-[0.875rem] phone:text-[0.9375rem]', f.hecha ? 'text-fg2' : 'text-fg')}>{f.titulo}</span>
+                </span>
+                <span className="flex min-w-0 gap-1.5 text-[0.75rem] text-fg3 phone:text-[0.8125rem]">
+                  {f.equipo ? <span className={clsx('shrink-0', EQUIPO[f.equipo] || 'text-fg2')}>{f.equipo}</span> : null}
+                  <span className="truncate">{f.nota || f.de}</span>
+                </span>
+                <Pista f={f} ya={ya} />
+              </>
+            )
+            const cls = 'flex flex-col gap-1 border-t border-line py-2'
+            return isLink(f.link) ? (
+              <a key={f.id || i} href={f.link} target="_blank" rel="noreferrer" className={clsx(cls, 'press -mx-2 rounded-row px-2 hover:bg-hover')}>{body}</a>
+            ) : (
+              <div key={f.id || i} className={cls}>{body}</div>
+            )
+          })}
+        </section>
+      ))}
+    </div>
+  )
+}
+
 function Panel({ foto, onClose }: { foto: Foto | null | 'error'; onClose: () => void }) {
   const [abierta, setAbierta] = useState<string | null>(null) // "<archivo>#<n>": sigue a la foto nueva
+  const [vista, setVista] = useState<Vista>('iniciativas')
   useEffect(() => {
     const key = (e: KeyboardEvent) => e.key === 'Escape' && (abierta ? setAbierta(null) : onClose())
     addEventListener('keydown', key)
@@ -118,11 +232,17 @@ function Panel({ foto, onClose }: { foto: Foto | null | 'error'; onClose: () => 
         className="relative flex h-[88dvh] w-full max-w-[560px] flex-col overflow-hidden rounded-t-2xl bg-bg text-fg shadow-sheet sm:h-[80dvh] sm:rounded-2xl"
       >
         <div className="flex items-center gap-2 px-4 pt-3 pb-2">
-          <h2 className="flex-1 text-[0.9375rem] font-semibold phone:text-[1.0625rem]">Iniciativas</h2>
+          <div className="min-w-0 flex-1">
+            <Tabs label="Vista">
+              {VISTAS.map(([k, l]) => (
+                <Tab key={k} on={vista === k} onClick={() => { setVista(k); setAbierta(null) }}>{l}</Tab>
+              ))}
+            </Tabs>
+          </div>
           {ok ? <span className="text-[0.75rem] text-fg3 tabular-nums">{hace(ok.at, now)}</span> : null}
           <Cerrar onClick={onClose} label="Cerrar" />
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-[max(env(safe-area-inset-bottom),--spacing(4))]">
+        <div key={vista} className="min-h-0 flex-1 overflow-y-auto px-2 pb-[max(env(safe-area-inset-bottom),--spacing(4))]">
           {foto === 'error' ? <p className="px-2 py-2 text-[0.875rem] text-fg2">Sin datos: /flota no responde en este Mac.</p> : null}
           {foto === null ? <p className="px-2 py-2 text-[0.875rem] text-fg3">Leyendo…</p> : null}
           {ok && now - ok.at > 120 ? <p className="mx-2 mb-2 rounded-lg bg-well px-3 py-2 text-[0.8125rem] text-work-fg">Dato de {hace(ok.at, now)}: el panel del escritorio no está abierto.</p> : null}
@@ -135,6 +255,9 @@ function Panel({ foto, onClose }: { foto: Foto | null | 'error'; onClose: () => 
                 <h3 className="px-2 pt-2 pb-1 text-[0.6875rem] tracking-wide text-fg3 uppercase phone:text-[0.75rem]">
                   {p.producto} <span className="normal-case tracking-normal">· el TPM lo escribió {hace(p.at, now)}</span>
                 </h3>
+                {vista === 'tablero' ? <Tablero p={p} /> : null}
+                {vista === 'gantt' ? <Gantt p={p} /> : null}
+                {vista === 'iniciativas' ? <>
                 {p.epicas.map((e, i) => {
                   const a = avance(e)
                   return (
@@ -154,6 +277,7 @@ function Panel({ foto, onClose }: { foto: Foto | null | 'error'; onClose: () => 
                   )
                 })}
                 {p.sueltas.map((t, i) => <FilaTarea key={t.id || i} t={t} sub={`Tarea suelta${t.sesion ? ` · ${t.sesion}` : ''}`} />)}
+                </> : null}
               </section>
             ),
           )}
