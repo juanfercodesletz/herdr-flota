@@ -65,6 +65,8 @@ b niega 'echo hola > .env'
 b niega 'echo "$(cat ~/.netrc)"'
 b niega 'x=`cat ~/.docker/config.json`'
 b niega 'sh -c "cat ~/.config/gh/hosts.yml"'
+b niega "/bin/zsh -lc 'cat ~/.ssh/id_rsa | wc -c'"   # así envuelve Codex
+b niega 'bash -ec "cat .env"'
 b niega "python3 -c \"print(open('$HOME/.aws/credentials').read())\""
 b niega "node -e \"require('fs').readFileSync('.env')\""
 b niega 'sudo cat ~/.ssh/id_rsa'

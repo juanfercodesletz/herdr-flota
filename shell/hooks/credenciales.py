@@ -148,7 +148,8 @@ def en_comando(seg, cwd, hondo):
     if cmd == "gh" and args[1:3] == ["auth", "token"]:
         return "el token de gh (gh auth token)"
     if cmd in SHELLS or cmd == "eval":
-        cod = args[args.index("-c") + 1:args.index("-c") + 2] if "-c" in args else (args[1:] if cmd == "eval" else [])
+        c = next((i for i, a in enumerate(args) if re.fullmatch(r"-[a-z]*c[a-z]*", a)), None)  # -c, -lc (Codex)
+        cod = args[c + 1:c + 2] if c is not None else (args[1:] if cmd == "eval" else [])
         if cod and (r := en_bash(" ".join(cod), cwd, hondo + 1)):
             return r
     if cmd in INTERPRETES:  # el código de -c/-e: cada cadena entre comillas y cada cosa con forma de ruta
