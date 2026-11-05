@@ -110,6 +110,13 @@ Cada paso se prueba en la app antes de seguir (`herdr-app check`, `herdr-app sho
    Para que Shepherdr vea una tarea en ccw (chat, reanudar, Backup) hace falta su rama `hf-7/perfiles-claude`
    (busca sesiones también en `~/.claude-*`) y sus hooks de chat (`session-note.sh` y `ask-hook.sh`, los
    de `~/.claude/settings.json`) también en `~/.claude-work/settings.json`.
+8. **Hook de credenciales:** `install.sh` registra `shell/hooks/credenciales.py` como PreToolUse en `~/.claude`,
+   `~/.claude-work` y `~/.codex/hooks.json` (en Codex hay que confiarlo una vez con `/hooks`). Niega a los agentes
+   leer, copiar o editar llaves de `~/.ssh` (menos `config`, `known_hosts`, `authorized_keys` y `*.pub`), `.env*`
+   (menos `.env.example`/`.sample`/`.template`), `*.pem`, `*.key`, `id_rsa*`, `~/.aws/credentials`, `~/.netrc`,
+   `gh`, Docker, kube, gcloud, Codex, Claude y el baúl de `herdr-secret`; ssh, git, gh y docker siguen igual, y el
+   mensaje lleva a `herdr-secret run NOMBRE -- …`. Se quita borrando su entrada de `hooks.PreToolUse` en esos tres
+   archivos (queda copia en `*.bak-credenciales`). Prueba: `zsh shell/prueba-credenciales.zsh`.
 
 ## Iniciativas
 
