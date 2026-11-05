@@ -21,8 +21,8 @@ app = sys.argv[1]
 d = json.load(open(f"{app}/layouts/shepherdr.json"))
 d.pop("preview", None)
 d["children"] = [c for c in d["children"] if c.get("id") != "entorno"]
-# Entorno: columna fija a la derecha, compartida por todos los espacios.
-d["children"].append({"id": "entorno", "type": "block", "size": {"px": 260}, "min": 220, "max": 380,
+# Entorno: columna fija a la derecha, compartida por todos los espacios. min 44: su botón la pliega a una tira.
+d["children"].append({"id": "entorno", "type": "block", "size": {"px": 260}, "min": 44, "max": 380,
                       "content": {"mod": "flota-entorno"}})
 # Iniciativas: en el panel de la derecha, donde abren Tasks y Files, con su botón al final de la barra de arriba.
 def find(n, id):

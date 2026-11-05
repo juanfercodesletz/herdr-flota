@@ -1,9 +1,9 @@
 // Entorno: lo que comparte toda la flota. Cupo de cada suscripción (5h y 7d) y los
 // recursos de este Mac, cada uno contra su presupuesto. Solo se colorea lo que está
 // cerca (10 puntos) o encima del techo.
-import { View, div } from "gpui-kit";
+import { View, div, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { exec, readTextFile, home, appHome, agents, theme, spaces } from "herdr";
+import { exec, readTextFile, home, appHome, agents, theme, spaces, layout, run, shared, setShared } from "herdr";
 import { DEFAULTS, entorno, level, clamp, DISCO, discoStat, startDisk, mcpLineas } from "./calc.js";
 
 // Codex no tiene barra de estado: su cupo sale del último log de sesión.
@@ -31,6 +31,17 @@ for line in reversed(open(f).read().splitlines()[-400:]):
 
 // Los números del Mac en una sola llamada.
 const MAC = `sysctl -n hw.ncpu hw.memsize kern.memorystatus_level; top -l 2 -n 0 -s 1 | grep 'CPU usage' | tail -1; python3 -c "$1"; herdr agent list 2>/dev/null | python3 -c "import json,sys;print('TUI', len(json.load(sys.stdin)['result']['agents']))" 2>/dev/null`;
+
+// Plegado como la barra de espacios de Shepherdr (workspace-chrome): va por el ancho del bloque `entorno`,
+// así que arrastrar el borde también lo pliega. Herdr guarda el ancho en layouts/.state: sobrevive reinicios.
+const find = (n, id) => n?.id === id ? n : (n?.children ?? []).reduce((r, c) => r || find(c, id), null);
+const width = () => find(layout(), "entorno")?.size?.px;
+const narrow = () => (width() ?? Infinity) < 160;
+function toggle() {
+  if (!narrow()) setShared("entorno.width", width());
+  run("layout.resize", { id: "entorno", px: narrow() ? (shared("entorno.width") ?? 260) : 44 });
+}
+const RANK = { none: 0, ok: 1, near: 2, over: 3 };
 
 export default class Entorno extends View {
   init(_props, cx) {
@@ -121,9 +132,23 @@ export default class Entorno extends View {
     };
 
     const e = entorno({ cap: this.cap, seats: this.seats, mac: this.mac, disk: this.disk, agents: agents().length });
+    const glyph = () => div().size(26).flex_none().flex().items_center().justify_center().rounded(6).text_color(t.muted)
+      .child(svg("mods/flota-entorno/panel-right.svg").size(15));
+
+    // Plegado: una tira con el ícono y, si algo está cerca o encima de su techo, un punto de ese color.
+    if (narrow()) {
+      const worst = [...e.seats, ...(e.mac || [])].map((r) => level(r.pct, r.c)).reduce((a, b) => (RANK[b] > RANK[a] ? b : a), "none");
+      const dot = { over: t.blocked, near: t.working }[worst];
+      return v_flex().id("rail").size_full().bg(t.chrome).items_center().pt(12).gap(10).cursor_pointer()
+        .hover((s) => s.bg(t.hover))
+        .tooltip(worst === "over" ? "Entorno: algo pasó su techo" : worst === "near" ? "Entorno: algo está cerca de su techo" : "Entorno")
+        .on_click(() => toggle())
+        .child(glyph())
+        .when(Boolean(dot), (el) => el.child(div().size(8).rounded_full().bg(dot)));
+    }
 
     return v_flex().id("root").size_full().bg(t.chrome).text_color(t.foreground).px(16).pt(12).pb(12).gap(18)
-      .child(h_flex().items_center().child(div().flex_1().font_semibold().child("Entorno")))
+      .child(h_flex().items_center().child(div().flex_1().font_semibold().child("Entorno")).child(glyph().id("plegar").cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip("Plegar").on_click(() => toggle())))
       .child(v_flex().gap(2)
         .child(div().text_size(15).font_semibold().child(e.head))
         .child(div().text_size(11.5).text_color(t.muted).child(e.sub)))
