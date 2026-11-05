@@ -1,0 +1,66 @@
+#!/bin/zsh -f
+# herdr-flota: vigía de reinicios para las tareas de Shepherdr (herdr-task). herdr-core no relanza los
+# agentes: tras un reinicio del Mac o del core, cada agente de tarea (lanzado con --keep) queda como una
+# shell vacía en su terminal. Este vigía sigue `hc events` y, por cada terminal que hc recupera así, hace
+# `herdr-task resume` de su tarea si sigue en running: Shepherdr ya guarda el argv y la sesión de cada
+# agente, así que vuelve con su conversación y en su carpeta. Luego cierra la shell vacía.
+#
+# No arranca el core: espera a que vuelva, porque el core les pasa su entorno a todos los terminales y el
+# de launchd es pelado. Lo deja corriendo install.sh, como servicio de launchd; escribe en stderr qué hizo.
+zmodload zsh/net/socket zsh/datetime zsh/system
+sock=${HC_SOCKET:-${XDG_STATE_HOME:-$HOME/.local/state}/herdr-core/${HC_SESSION:-default}/${HC_SESSION:-default}.sock}
+vivo() { zsocket $sock 2>/dev/null && exec {REPLY}>&- }
+log() { print -u2 -- "$(strftime '%F %T' $EPOCHSECONDS) $*" }
+
+# Una shell de recuperación: el registro de hc dice una shell y ella misma está en primer plano. Una shell
+# que quedó porque el agente salió (Shepherdr lo corre dentro de `zsh -lic`) no cuenta: su registro dice sh -c.
+RECUPERADA='.state == "live" and .foreground.pid == .pid and .foreground.argv == .argv
+  and (.argv[0] | split("/")[-1] | IN("zsh", "bash", "sh", "fish", "dash", "ksh"))'
+
+reanudar() {  # $1: terminal
+  local t=$1 info clave tarea r fin=$(( SECONDS + 30 ))
+  # Recién vuelto el core, hc aún no sabe qué hay en primer plano.
+  while info=$(hc get $t --json 2>/dev/null) && [[ $(jq -r '.state == "live" and .foreground == null' <<<$info) == true ]] && (( SECONDS < fin )); do
+    sleep 1
+  done
+  [[ $(jq -r "$RECUPERADA" <<<$info 2>/dev/null) == true ]] || return 0
+  clave=$(jq -r 'if .labels["herdr.role"] == "reviewer" then empty else .labels["herdr.task"] // empty end' <<<$info)
+  [[ -n $clave ]] || return 0
+  # Una reanudación por tarea a la vez (una tarea puede tener varias shells recuperadas).
+  local candado=${TMPDIR:-/tmp}/flota-reanudar.${clave//[^A-Za-z0-9]/-}.lock
+  : >> $candado && zsystem flock -t 30 $candado 2>/dev/null || return 0
+  tarea=$(herdr-task list --all --json 2>/dev/null | jq -c --arg k $clave '.[].tasks[] | select(.key == $k)
+    | {ref, folder, state, vivos: (.live | length), agent: (.agents[-1].agent // empty)}')
+  if [[ -z $tarea ]]; then log "$t: la tarea $clave ya no existe"; return 0; fi
+  # `live`: los agentes de la tarea que corren de verdad (una shell no cuenta).
+  if [[ $(jq -r '.state + " " + (.vivos | tostring)' <<<$tarea) != "running 0" ]]; then
+    # Otra shell de la misma tarea ya la reanudó, o la tarea no estaba en marcha.
+    [[ $(jq -r .state <<<$tarea) == running ]] && hc kill $t >/dev/null 2>&1 && hc rm $t >/dev/null 2>&1
+    return 0
+  fi
+  # --agent: el argv se rehace con los Settings de ahora (worker_argv), por si cambiaron los permisos;
+  # resume sigue retomando la sesión del mismo agente. ponytail: un argv dado a mano al empezar se pierde.
+  local -a agente=(); [[ -n $(jq -r '.agent // empty' <<<$tarea) ]] && agente=(--agent $(jq -r .agent <<<$tarea))
+  if r=$(herdr-task resume $(jq -r .ref <<<$tarea) --folder "$(jq -r .folder <<<$tarea)" $agente --json 2>&1); then
+    log "$t: $(jq -r .ref <<<$tarea) $(jq -r 'if .resumed then "retomó su sesión" else "empezó con un traspaso" end + " en " + .terminal' <<<$r 2>/dev/null || print -r -- $r)"
+    # Hasta que el agente nuevo corre, la tarea sigue sin `live`: otra shell suya la reanudaría otra vez.
+    local nuevo=$(jq -r .terminal <<<$r) hasta=$(( SECONDS + 60 ))
+    until [[ $(hc get $nuevo --json 2>/dev/null | jq -r '(.foreground.name // "") | split("/")[-1]') != (|zsh|bash|sh|fish|dash|ksh) ]] || (( SECONDS > hasta )); do
+      sleep 1
+    done
+    hc kill $t >/dev/null 2>&1; hc rm $t >/dev/null 2>&1  # la shell vacía que quedó en su lugar
+  else
+    log "$t: no pude reanudar $(jq -r .ref <<<$tarea): $r"
+  fi
+}
+
+while true; do
+  until vivo; do sleep 5; done
+  hc events --json 2>/dev/null | while IFS= read -r l; do
+    for t in $(jq -r 'if .terminals then .terminals[] | select(.state == "live" and .labels["herdr.task"]) | .address
+      elif .params.type == "restarted" then .params.terminal else empty end' <<<$l 2>/dev/null); do
+      reanudar $t &
+    done
+  done
+  sleep 2
+done

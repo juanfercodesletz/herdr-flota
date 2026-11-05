@@ -36,7 +36,7 @@ no tiene ArtifactData y no hay API pública). Por eso el TPM es el puente: en ca
 0. Repo y plan. ✓
 1. Shepherdr instalado como base. ✓
 2. La flota corre en herdr-core (`hc`), con etiquetas `flota.producto`, `flota.rol`,
-   `flota.padre`, `flota.tarea` y `flota.asiento` en cada terminal. En curso: lanzador ✓.
+   `flota.padre`, `flota.tarea` y `flota.asiento` en cada terminal. En curso: lanzador ✓, reanudar ✓ (para las tareas de Shepherdr).
 3. Árbol de productos: se probó y se quitó (no escalaba con muchas sesiones). El diseño queda en `b69f10a`.
 4. Entorno. ✓ (primero, por ser independiente del resto)
 5. Iniciativas, desde el archivo que escribe el TPM. ✓
@@ -206,3 +206,32 @@ bin/flota-lanzar --asiento ccw --producto english-learning --rol autor --tarea E
 Prueba: `zsh shell/prueba-lanzador.zsh` lanza un ccp y un ccw en Haiku y un codex en `gpt-6-luna low`,
 cada uno en una carpeta temporal, comprueba etiquetas, perfil y que respondió su palabra, y borra todo
 lo suyo al terminar (terminales, carpetas, transcripciones y registros de perfil). Tarda ~30 s.
+
+## Reanudar tras un reinicio
+
+La flota corre como tareas de Shepherdr (`herdr-task`). herdr-core no relanza los agentes tras un
+reinicio del Mac o del core: Shepherdr los lanza con `--keep`, y hc deja en cada terminal una `zsh -l`
+vacía, sin el comando original (medido en un core aislado, hc 0.1.18). Un `hc server restart` no corta
+nada: los programas siguen.
+
+- `bin/flota-reanudar` (servicio launchd `dev.herdr-flota.reanudar`, lo deja `install.sh`) sigue
+  `hc events`. Por cada terminal de tarea que hc recupera como shell vacía, si su tarea sigue en
+  `running` sin ningún agente que corra (`live` vacío en `herdr-task list`), hace
+  `herdr-task resume <id> --folder <carpeta> --agent <su agente>` y cierra la shell vacía. Shepherdr
+  guarda el argv y la sesión de cada agente en `~/.herdr/tasks/*.json`: vuelve con su conversación y en
+  su carpeta, en un terminal nuevo. `--agent` hace que el argv salga de los Settings de ahora
+  (`worker_argv`), por si cambiaron los permisos; un argv dado a mano al empezar la tarea se pierde.
+- Solo toca lo que el reinicio cortó: una tarea cuyo agente salió antes (queda la shell de Shepherdr,
+  no una de recuperación) no se reanuda, y los reviewers tampoco.
+- No arranca el core: espera a que lo arranque la app, porque el core les pasa su entorno a todos
+  los terminales y el de launchd es pelado.
+- Lo que hace queda en `~/.herdr/flota/reanudar.log`; no muestra nada en pantalla. La tarea reanudada
+  se ve como siempre en el panel de tareas (también en la web del iPhone).
+- Se quita con `launchctl bootout gui/$(id -u)/dev.herdr-flota.reanudar`.
+
+Prueba: `zsh shell/prueba-reanudar.zsh` levanta un herdr-core aislado (`HC_SOCKET` y estado propios en
+`/tmp`; el de verdad no se toca), con su propio almacén de tareas (`HERDR_TASK_STORE`) y un `herdr-app`
+falso para no tocar la ventana. Crea 3 tareas desechables (Claude y Codex en worktrees, Claude en una
+carpeta con espacio, modelos baratos), reinicia ese core 3 veces (parada limpia, apagón y apagón con 2 en
+medio de un `ping -c 120`) y tras cada vez comprueba que las 3 volvieron con su conversación y en su
+carpeta, sin compuertas y una vez cada una. Borra todo lo suyo al terminar. Tarda ~6 min.
