@@ -1,0 +1,50 @@
+{
+  "producto": "Veta",
+  "epicas": [
+    {
+      "id": "86e3yj2qg",
+      "titulo": "Órdenes de compra en causaciones",
+      "estado": "a tiempo",
+      "link": "https://app.clickup.com/t/86e3yj2qg",
+      "tareas": [
+        { "id": "86e3yk0t1", "titulo": "Tildes en la regla R901", "estado": "merged", "link": "https://app.clickup.com/t/86e3yk0t1" },
+        { "id": "86e3yk0t2", "titulo": "Círculos de Radian", "estado": "merged", "link": "https://app.clickup.com/t/86e3yk0t2" },
+        { "id": "86e3yk0t3", "titulo": "Causaciones manuales", "estado": "merged", "link": "https://app.clickup.com/t/86e3yk0t3" },
+        { "id": "86e3yk0t4", "titulo": "Buscar OC de los últimos 60 días", "estado": "auditoría", "link": "https://app.clickup.com/t/86e3yk0t4", "sesion": "autor-86e3yk0t4" },
+        { "id": "86e3yk0t5", "titulo": "Refrescar la OC desde Siigo", "estado": "bloqueada", "link": "https://app.clickup.com/t/86e3yk0t5", "sesion": "autor-86e3yk0t5" },
+        { "id": "86e3yk0t6", "titulo": "Traer OC al detalle", "estado": "en curso", "link": "https://app.clickup.com/t/86e3yk0t6", "sesion": "autor-86e3yk0t6" },
+        { "id": "86e3yk0t9", "titulo": "Gate de esquema DBOS en CI", "estado": "bloqueada", "link": "https://app.clickup.com/t/86e3yk0t9", "sesion": "autor-86e3yk0t9" },
+        { "id": "86e3yk0ta", "titulo": "Libra de 500 g en unidades", "estado": "PR abierto", "link": "https://app.clickup.com/t/86e3yk0ta", "sesion": "autor-86e3yk0ta" },
+        { "id": "86e3yk0tb", "titulo": "Avisar OC vencidas al causar", "estado": "en cola", "link": "https://app.clickup.com/t/86e3yk0tb" },
+        { "id": "86e3yk0tc", "titulo": "Exportar causaciones a Siigo", "estado": "en cola", "link": "https://app.clickup.com/t/86e3yk0tc" }
+      ]
+    },
+    {
+      "id": "86e3yjatt",
+      "titulo": "Causaciones v2",
+      "estado": "en riesgo",
+      "link": "https://app.clickup.com/t/86e3yjatt",
+      "tareas": [
+        { "id": "86e3yl0t8", "titulo": "Flujo de causaciones v2", "estado": "en curso", "link": "https://app.clickup.com/t/86e3yl0t8", "sesion": "autor-86e3yl0t8" },
+        { "id": "86e3yl0td", "titulo": "Gemelas en causaciones", "estado": "en cola", "link": "https://app.clickup.com/t/86e3yl0td" },
+        { "id": "86e3yl0te", "titulo": "Webhook de causadas", "estado": "en cola", "link": "https://app.clickup.com/t/86e3yl0te" }
+      ]
+    },
+    {
+      "id": "86e3w1x0p",
+      "titulo": "Migración de producción a k8s",
+      "estado": "a tiempo",
+      "link": "https://app.clickup.com/t/86e3w1x0p",
+      "tareas": [
+        { "id": "86e3w1x01", "titulo": "Clúster letz-prod con ingress", "estado": "merged", "link": "https://app.clickup.com/t/86e3w1x01" },
+        { "id": "86e3w1x02", "titulo": "Migrar workers de DBOS", "estado": "en cola", "link": "https://app.clickup.com/t/86e3w1x02" }
+      ]
+    }
+  ],
+  "sueltas": [
+    { "id": "86e3z01qa", "titulo": "Casos de regresión de causación en Qase", "estado": "en curso", "link": "https://app.clickup.com/t/86e3z01qa", "sesion": "autor-86e3z01qa" },
+    { "id": "86e3z0s58", "titulo": "Guardar el código 58 de Siigo", "estado": "bloqueada", "link": "https://app.clickup.com/t/86e3z0s58", "sesion": "autor-86e3z0s58" },
+    { "id": "86e3z0blk", "titulo": "Reporte de causaciones de octubre para Belkis", "estado": "PR abierto", "link": "https://app.clickup.com/t/86e3z0blk", "sesion": "autor-86e3z0blk" },
+    { "id": "86e3z0aln", "titulo": "Reintento de envío a Alanube", "estado": "en cola", "link": "https://app.clickup.com/t/86e3z0aln" }
+  ]
+}
