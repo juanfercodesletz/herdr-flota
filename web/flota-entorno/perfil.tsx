@@ -18,13 +18,15 @@ let foto: Foto | null = null
 let timer = 0
 const subs = new Set<() => void>()
 const leer = () => fetch('/flota/perfiles.json', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((f) => { foto = f; subs.forEach((s) => s()) }, () => {})
-function useFoto() {
-  return useSyncExternalStore((cb) => {
-    subs.add(cb)
-    if (!timer) { void leer(); timer = window.setInterval(leer, 15_000) }
-    return () => { subs.delete(cb); if (!subs.size) { clearInterval(timer); timer = 0 } }
-  }, () => foto)
+// Fuera del hook: una función nueva en cada render hace que React se desuscriba y vuelva a suscribirse, y cada
+// vuelta lee de nuevo; así quedó un fetch en bucle (HF-17).
+const suscribir = (cb: () => void) => {
+  subs.add(cb)
+  if (!timer) { void leer(); timer = window.setInterval(leer, 15_000) }
+  return () => { subs.delete(cb); if (!subs.size) { clearInterval(timer); timer = 0 } }
 }
+const leerFoto = () => foto
+const useFoto = () => useSyncExternalStore(suscribir, leerFoto)
 
 const donde = (x: Terminal) =>
   x.dir === null ? 'No se pudo leer el entorno de su proceso.'
