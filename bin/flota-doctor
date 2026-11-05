@@ -1,0 +1,266 @@
+#!/usr/bin/env python3
+"""flota-doctor: chequeo de salud de la flota, solo lectura. No arregla, no reinicia, no toca Shepherdr.
+
+  flota-doctor [--json]
+
+Una línea por chequeo: ok, aviso o falla, con qué está mal y el arreglo en una frase. --json para el TPM.
+Sale con 1 si hay alguna falla. Mira:
+  1. mods y plugins web instalados frente a `main` del repo (y los que ya no existen en él);
+  2. los servicios launchd dev.herdr-flota.*: cargados, sin apuntar a un worktree, y /flota responde;
+  3. el perfil de Claude (ccp, ccw o a secas) de cada Assistant y cada tarea frente a shell/asientos;
+  4. los archivos de Iniciativas: JSON válido y `espacios` con ids que existen;
+  5. las tareas de herdr-task con un `space` que ya no existe.
+"""
+import fnmatch, glob, json, os, re, subprocess, sys, time, urllib.request
+
+AQUI = os.path.dirname(os.path.realpath(__file__))
+sys.dont_write_bytecode = True  # nada de __pycache__ en la carpeta del mod
+sys.path.insert(0, os.path.join(AQUI, "..", "mods", "flota-entorno"))
+import perfiles  # noqa: E402  (HF-13: el perfil del proceso real)
+
+H = os.path.expanduser("~")
+APP = os.environ.get("HERDR_APP_HOME") or H + "/.config/herdr-app"
+PLUGINS = (os.environ.get("SHEPHERDR_HOME") or H + "/.shepherdr") + "/plugins"
+FLOTA = H + "/.herdr/flota"
+TAREAS = perfiles.TAREAS
+AGENTS = H + "/Library/LaunchAgents"
+SERVICIOS = ("web", "vigia", "reanudar")  # los que deja install.sh
+RAMA = os.environ.get("FLOTA_DOCTOR_RAMA", "main")
+res = []
+
+
+def r(chequeo, estado, que, arreglo=""):
+    res.append({"chequeo": chequeo, "estado": estado, "que": que, **({"arreglo": arreglo} if arreglo else {})})
+
+
+def git(*a, inp=None):
+    p = subprocess.run(["git", "-C", REPO, *a], input=inp, capture_output=True, text=True)
+    return p.stdout if p.returncode == 0 else None
+
+
+def corto(p):
+    return "~" + p[len(H):] if p.startswith(H + "/") else p
+
+
+# El repo principal, aunque el doctor corra desde un worktree.
+_c = subprocess.run(["git", "-C", AQUI, "rev-parse", "--path-format=absolute", "--git-common-dir"], capture_output=True, text=True).stdout.strip()
+REPO = os.path.dirname(_c) if _c else os.path.dirname(AQUI)
+INSTALAR = f"corre ./install.sh en {corto(REPO)} con {RAMA} al día"
+
+
+def arbol(prefijo):
+    """{ruta relativa: sha} de main bajo prefijo/ (mods/x o web/x)."""
+    out = git("ls-tree", "-r", RAMA, "--", prefijo + "/") or ""
+    return {l.split("\t", 1)[1][len(prefijo) + 1:]: l.split()[2] for l in out.splitlines()}
+
+
+def instalado(d):
+    """{ruta relativa: sha} de los archivos de una carpeta instalada."""
+    fs = sorted(os.path.relpath(f, d) for f in glob.glob(d + "/**", recursive=True) if os.path.isfile(f))
+    shas = (git("hash-object", "--stdin-paths", inp="".join(f"{d}/{f}\n" for f in fs)) or "").split()
+    return dict(zip(fs, shas))
+
+
+def diferencias(quiero, tengo):
+    malos = [f for f in quiero if tengo.get(f) != quiero[f]] + [f for f in tengo if f not in quiero]
+    return ", ".join(sorted(malos)[:4]) + (f" y {len(malos) - 4} más" if len(malos) > 4 else "")
+
+
+def instalacion():
+    if git("rev-parse", "--verify", "-q", RAMA) is None:
+        return r("instalación", "aviso", f"no encuentro la rama {RAMA} en {corto(REPO)}", "revisa el repo")
+    mods = {os.path.basename(p) for p in (git("ls-tree", "--name-only", RAMA, "mods/") or "").split()}
+    webs = {os.path.basename(p) for p in (git("ls-tree", "--name-only", RAMA, "web/") or "").split()}
+    for m in sorted(mods):
+        d = f"{APP}/mods/{m}"
+        if not os.path.isdir(d):
+            r("mods", "falla", f"mod {m}: no está instalado", INSTALAR)
+        elif dif := diferencias(arbol("mods/" + m), instalado(d)):
+            r("mods", "falla", f"mod {m}: distinto de {RAMA} ({dif})", INSTALAR)
+        else:
+            r("mods", "ok", f"mod {m}: igual a {RAMA}")
+    for w in sorted(webs):
+        d = f"{PLUGINS}/{w}"
+        quiero = {f: s for f, s in arbol("web/" + w).items() if not f.endswith(".js")}
+        # El .js del mod que importa el plugin (calc.js, iniciativas.js) va copiado al lado, como en install.sh.
+        js = {j for f in quiero for j in re.findall(r"""from\s+['"]\./([\w.-]+\.js)['"]""", git("show", f"{RAMA}:web/{w}/{f}") or "")}
+        mod = arbol("mods/" + w)
+        quiero.update({j: mod.get(j, "?") for j in js})
+        if not os.path.isdir(d):
+            r("web", "falla", f"plugin {w}: no está instalado", INSTALAR)
+        elif dif := diferencias(quiero, instalado(d)):
+            r("web", "falla", f"plugin {w}: distinto de {RAMA} ({dif})", INSTALAR)
+        else:
+            r("web", "ok", f"plugin {w}: igual a {RAMA}")
+    for d in sorted(glob.glob(f"{APP}/mods/flota-*")):
+        if os.path.basename(d) not in mods:
+            r("mods", "falla", f"mod {os.path.basename(d)}: instalado pero ya no está en {RAMA}", f"bórralo: rm -rf {corto(d)}")
+    for d in sorted(glob.glob(f"{PLUGINS}/flota-*")):
+        if os.path.basename(d) not in webs:
+            r("web", "falla", f"plugin {os.path.basename(d)}: instalado pero ya no está en {RAMA}",
+              f"bórralo (rm -rf {corto(d)}) y reconstruye la web con shepherdr update --yes --keys keep")
+
+
+def servicios():
+    uid = os.getuid()
+    plists = {os.path.basename(p)[len("dev.herdr-flota."):-len(".plist")]: p for p in glob.glob(f"{AGENTS}/dev.herdr-flota.*.plist")}
+    for s in sorted(set(SERVICIOS) | set(plists)):
+        label = "dev.herdr-flota." + s
+        p = plists.get(s)
+        if not p:
+            r("servicios", "falla", f"{label}: no está instalado", INSTALAR)
+            continue
+        try:
+            args = json.loads(subprocess.run(["plutil", "-extract", "ProgramArguments", "json", "-o", "-", p], capture_output=True, text=True).stdout)
+        except Exception:
+            r("servicios", "falla", f"{label}: su plist no se lee", INSTALAR)
+            continue
+        wt = [a for a in args if "/.herdr/worktrees/" in a]
+        falta = [a for a in args[1:] if a.startswith("/") and not os.path.exists(a)]
+        cargado = subprocess.run(["launchctl", "print", f"gui/{uid}/{label}"], capture_output=True).returncode == 0
+        if wt:
+            r("servicios", "falla", f"{label}: apunta a un worktree ({corto(wt[0])})", INSTALAR)
+        elif falta:
+            r("servicios", "falla", f"{label}: falta {corto(falta[0])}", INSTALAR)
+        elif not cargado:
+            r("servicios", "falla", f"{label}: no está cargado", f"launchctl bootstrap gui/{uid} {corto(p)}")
+        elif s == "web" and "servir" in args:
+            puerto = args[args.index("servir") + 1]
+            try:
+                urllib.request.urlopen(f"http://127.0.0.1:{puerto}/", timeout=3)
+                r("servicios", "ok", f"{label}: cargado y /flota responde en 127.0.0.1:{puerto}")
+            except Exception as e:
+                r("servicios", "falla", f"{label}: no responde en 127.0.0.1:{puerto} ({getattr(e, 'reason', e)})",
+                  f"launchctl kickstart -k gui/{uid}/{label}")
+        else:
+            r("servicios", "ok", f"{label}: cargado, en {corto(REPO) if any(REPO in a for a in args) else 'su sitio'}")
+
+
+def asiento(cwd):
+    """El perfil que shell/asientos le da a una carpeta (un worktree cuenta como su repo), como flota-perfil sin el
+    cambio por cupo agotado."""
+    c = subprocess.run(["git", "-C", cwd, "rev-parse", "--path-format=absolute", "--git-common-dir"], capture_output=True, text=True).stdout.strip()
+    donde = os.path.dirname(c) if c else cwd
+    try:
+        lineas = open(os.environ.get("FLOTA_ASIENTOS") or os.path.join(AQUI, "..", "shell", "asientos")).read().splitlines()
+    except OSError:
+        return None
+    for l in lineas:
+        parts = l.split()
+        if len(parts) >= 2 and not parts[0].startswith("#"):
+            # fnmatch: * también cruza "/", como el patrón de zsh del mapa.
+            if fnmatch.fnmatchcase(donde, os.path.expanduser(parts[0])):
+                return parts[1]
+    return None
+
+
+def perfil():
+    ts = perfiles.terminales()
+    if not ts:
+        return r("perfiles", "aviso", "no veo ningún claude en hc", "revisa que herdr-core esté arriba (hc ls)")
+    for t in sorted(ts, key=lambda t: not t["assistant"]):
+        quien = f"Assistant {t['address']}" if t["assistant"] else f"tarea {t['tarea'] or t['name'] or t['address']}"
+        if not t["assistant"] and not t["tarea"]:
+            continue  # ponytail: solo Assistants y tareas; las sesiones sueltas (limpieza, lanzadas a mano) no tienen mapa
+        quiero, tengo = asiento(t["cwd"]), t["perfil"]
+        donde = corto(t["cwd"])
+        if tengo == "?":
+            r("perfiles", "aviso", f"{quien}: no pude leer su perfil ({donde})", "nada que hacer si sigue así: el proceso no deja ver su entorno")
+        elif tengo == quiero:
+            r("perfiles", "ok", f"{quien}: {tengo}")
+        elif tengo == "a secas" and t["assistant"]:
+            # Shepherdr lanza los Assistants con sh -c, fuera de zsh: ni claude() ni el mapa los tocan (README).
+            r("perfiles", "aviso", f"{quien}: corre a secas, el mapa dice {quiero} ({donde})",
+              "hoy no tiene arreglo desde la flota: Shepherdr no deja elegir el perfil del Assistant")
+        elif tengo == "a secas":
+            r("perfiles", "falla", f"{quien}: corre a secas, el mapa dice {quiero} ({donde})",
+              "carga shell/flota.zsh en ~/.zshrc (README, paso 7): las tareas que arranquen después tomarán su perfil")
+        else:
+            # Otro perfil: puede ser el cambio por cupo agotado de flota-perfil.
+            r("perfiles", "aviso", f"{quien}: corre en {tengo}, el mapa dice {quiero} ({donde})",
+              "si no fue por cupo agotado, revisa shell/asientos")
+
+
+def espacios_vivos():
+    """{id: carpeta} de los espacios de la app, o None si no responde."""
+    try:
+        return {s["id"]: s.get("folder") for s in json.loads(subprocess.run(["herdr-app", "ls"], capture_output=True, text=True, timeout=10).stdout)["spaces"]}
+    except Exception:
+        return None
+
+
+def iniciativas(vivos):
+    archivos = [f for f in sorted(glob.glob(FLOTA + "/*.json")) if os.path.basename(f) != "presupuesto.json"]
+    if not archivos:
+        return r("iniciativas", "ok", "no hay archivos de Iniciativas")
+    js = os.path.join(AQUI, "..", "mods", "flota-iniciativas", "iniciativas.js")
+    # HF-12: el mismo lector del panel (leer de iniciativas.js) dice si el archivo está bien y qué espacios trae.
+    prog = """
+      import { readFileSync } from "node:fs";
+      const { leer } = await import(process.argv[1]);
+      const rd = (f) => { try { return readFileSync(f, "utf8"); } catch { return null; } };
+      console.log(JSON.stringify(process.argv.slice(2).map((f) => leer(f.split("/").pop(), rd(f)))));"""
+    p = subprocess.run(["node", "--input-type=module", "-e", prog, os.path.realpath(js), *archivos], capture_output=True, text=True)
+    try:
+        leidos = json.loads(p.stdout)
+    except Exception:
+        return r("iniciativas", "aviso", f"no pude correr el lector de Iniciativas ({p.stderr.strip()[:80]})", "revisa que node esté en el PATH")
+    for f, d in zip(archivos, leidos):
+        nombre = corto(f)
+        if d.get("error"):
+            r("iniciativas", "falla", d["error"], f"el TPM debe reescribir {nombre} (skill iniciativas-flota)")
+        elif d.get("aviso"):
+            r("iniciativas", "falla", d["aviso"], f"cambia esos nombres en {nombre} por el id del espacio (spaces[].id en herdr-app ls)")
+        elif vivos is not None and (muertos := [e for e in d["espacios"] if e not in vivos]):
+            r("iniciativas", "falla", f"{d['archivo']}: espacios que ya no existen: {', '.join(muertos)}",
+              f"cambia esos ids en {nombre} por los de herdr-app ls")
+        else:
+            r("iniciativas", "ok", f"{d['archivo']}: {d['producto']}, {len(d['espacios'])} espacio(s)")
+
+
+def tareas(vivos):
+    if vivos is None:
+        return
+    n = 0
+    for f in sorted(glob.glob(TAREAS + "/*.json")):
+        try:
+            s = json.load(open(f))
+        except Exception:
+            continue
+        for t in s.get("tasks") or []:
+            sp = t.get("space")
+            if not sp:
+                continue
+            n += 1
+            if sp in vivos:
+                continue
+            ref = f"{s.get('prefix')}-{t.get('id')}" if s.get("prefix") else f"#{t.get('id')}"
+            if t.get("state") == "done":
+                r("tareas", "aviso", f"{ref} (hecha) apunta al espacio {sp}, que ya no existe",
+                  "nada que hacer: es historial y se archiva sola a la semana")
+            else:
+                suyo = next((i for i, c in vivos.items() if c == s.get("folder")), "<id de su espacio en herdr-app ls>")
+                r("tareas", "falla", f"{ref} ({t.get('state')}) apunta al espacio {sp}, que ya no existe: no se ve en ningún espacio",
+                  f"herdr-task switch {t.get('id')} --folder {corto(s.get('folder') or '?')} --space {suyo}")
+    if not any(x["chequeo"] == "tareas" for x in res):
+        r("tareas", "ok", f"las {n} tareas con espacio apuntan a uno que existe")
+
+
+if __name__ == "__main__":
+    instalacion()
+    servicios()
+    perfil()
+    vivos = espacios_vivos()
+    if vivos is None:
+        r("espacios", "aviso", "herdr-app ls no responde: no puedo ver los espacios", "abre la app Herdr")
+    iniciativas(vivos)
+    tareas(vivos)
+    fallas = sum(x["estado"] == "falla" for x in res)
+    if "--json" in sys.argv[1:]:
+        json.dump({"at": int(time.time()), "fallas": fallas, "avisos": sum(x["estado"] == "aviso" for x in res), "chequeos": res},
+                  sys.stdout, ensure_ascii=False)
+        print()
+    else:
+        for x in res:
+            print(f"{x['estado']:<6} {x['que']}" + (f"\n       → {x['arreglo']}" if x.get("arreglo") else ""))
+    sys.exit(1 if fallas else 0)
