@@ -250,6 +250,13 @@ Los Assistants de los espacios corren **a secas**: Shepherdr los lanza con `sh -
 Prueba: `python3 shell/prueba-perfil.py` (tres procesos reales, ccp, ccw y a secas, con un argumento trampa; un
 `claude --resume` reanudado con su registro; y una config con secretos de la que solo salen los nombres).
 
+## Chequeo de salud
+
+`bin/flota-doctor` (`--json` para el TPM, que lo corre en cada tick) revisa sin cambiar nada: mods y plugins web
+instalados frente a `main`, servicios `dev.herdr-flota.*` cargados y fuera de worktrees, el perfil de Claude de cada
+Assistant y tarea frente a `shell/asientos`, los `espacios` de Iniciativas y el espacio de cada tarea de herdr-task.
+Una línea por chequeo, `ok` / `aviso` / `falla` con su arreglo; sale con 1 si algo falla. Prueba: `python3 shell/prueba-doctor.py`.
+
 ## Lanzar un asiento
 
 `bin/flota-lanzar` abre una sesión de agente en herdr-core (solo `hc`, nunca la Herdr de terminal):
