@@ -5,7 +5,7 @@
 // estado) y Gantt (el plan del día por salida a producción) con la misma foto; en el teléfono, todo a lo alto.
 // Pestaña Decisiones: las preguntas que el TPM copia de la base del Gantt; tocar una opción la manda a /flota/respuesta
 // (mods/flota-iniciativas/respuestas.py), que la guarda en ~/.herdr/flota/respuestas/<archivo> para el TPM.
-// Muestra los productos del espacio abierto (en el teléfono, el del cajón) según su campo `espacios`; Home, todos.
+// Muestra los productos del espacio abierto (en el teléfono, el del cajón) según su id en el campo `espacios`; Home, todos.
 import clsx from 'clsx'
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -388,7 +388,7 @@ function useDelEspacio(foto: Foto | null | 'error'): Foto | null | 'error' {
   const snap = useSnap()
   if (!foto || foto === 'error') return foto
   const p = snap ? placeOf(snap, place) : null
-  const espacio = p ? { nombre: p.name, home: Boolean(p.home) || (p.where !== undefined && esHome(p.where)) } : null
+  const espacio = p ? { id: p.id, home: Boolean(p.home) || (p.where !== undefined && esHome(p.where)) } : null
   return { ...foto, productos: delEspacio(foto.productos, espacio), total: foto.productos.length }
 }
 

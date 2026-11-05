@@ -78,21 +78,35 @@ assert.deepEqual(D([{ id: 3, pregunta: "¿?", estado: "raro" }]).decisiones[0], 
 assert.equal(leer("x.json", JSON.stringify({ producto: "P", decisiones: [{ id: "a", pregunta: "¿?", opciones: ["Sí", "No"], estado: "cerrada", respuesta: "No" }] }),
   JSON.stringify({ a: { respuesta: "Sí" } })).decisiones[0].respuesta, "No");
 
-// Por espacio: cada espacio ve los productos que lo nombran en `espacios`; Home (por su carpeta, no su nombre) ve todos,
-// en el orden por urgencia; sin `espacios`, solo Home. Un archivo mal escrito sigue en sus espacios; uno ilegible, solo en Home.
+// Por espacio: cada espacio ve los productos que nombran su id en `espacios`; Home (por su carpeta, no su nombre) ve
+// todos, en el orden por urgencia; sin `espacios`, solo Home. Un archivo mal escrito sigue en sus espacios; uno ilegible, solo en Home.
+const FLOTA = "sp65efc7c291fa3ed20d36630bd68c7ef3", VETA = "spb83c5f1d4731ea1f84df503dfb0f14eb", FRONT = "sp0123456789abcdef0123456789abcdef";
 const F = (producto, espacios, estado = "en curso") => leer(`${producto}.json`, JSON.stringify({ producto, espacios, sueltas: [T(estado)] }));
-const todos = ordenar([F("flota", ["herdr-flota"]), F("veta", ["Backend & Web", "veta-frontend"], "bloqueada"), F("suelto", undefined),
-  leer("roto.json", '{"producto":"R","espacios":["herdr-flota"],"epicas":{}}'), leer("ilegible.json", "{ roto")]);
+const todos = ordenar([F("flota", [FLOTA]), F("veta", [{ id: VETA, nombre: "Backend & Web" }, FRONT], "bloqueada"), F("suelto", undefined),
+  leer("roto.json", `{"producto":"R","espacios":["${FLOTA}"],"epicas":{}}`), leer("ilegible.json", "{ roto")]);
 const ve = (e) => delEspacio(todos, e).map((p) => p.producto || p.archivo);
-assert.deepEqual(ve({ nombre: "Home", home: true }), ["veta", "flota", "suelto", "roto.json", "ilegible.json"]);
-assert.deepEqual(ve(null), ve({ nombre: "Home", home: true }));
-assert.deepEqual(ve({ nombre: "herdr-flota", home: false }), ["flota", "roto.json"]);
-assert.deepEqual(ve({ nombre: "backend & web", home: false }), ["veta"]); // sin distinguir mayúsculas
-assert.deepEqual(ve({ nombre: "Home", home: false }), []); // un espacio llamado Home que no está en ~ no es Home
-assert.deepEqual(ve({ nombre: "letz-infra", home: false }), []); // el panel muestra SIN_INICIATIVAS
+assert.deepEqual(ve({ id: "sp8ea65d7f19a5d6aacbbfdd484991b0e3", home: true }), ["veta", "flota", "suelto", "roto.json", "ilegible.json"]);
+assert.deepEqual(ve(null), ve({ id: "x", home: true }));
+assert.deepEqual(ve({ id: FLOTA, home: false }), ["flota", "roto.json"]);
+assert.deepEqual(ve({ id: VETA, home: false }), ["veta"]);
+assert.deepEqual(ve({ id: FRONT, home: false }), ["veta"]);
+assert.deepEqual(ve({ id: "sp704097cca7bb40b2f92afc705822b649", home: false }), []); // el panel muestra SIN_INICIATIVAS
 assert.equal(SIN_INICIATIVAS, "Este espacio no tiene iniciativas");
-assert.match(leer("x.json", '{"producto":"P","espacios":"herdr-flota"}').error, /"espacios" va como lista/);
-assert.deepEqual(leer("x.json", '{"producto":"P","espacios":["a",3,"","b"]}').espacios, ["a", "b"]);
+// Renombrar un espacio no cambia lo que ve: el panel pasa el id del espacio abierto, y el nombre no entra.
+const abierto = (s) => ({ id: s.id, home: esHome(s.folder) });
+const antes = { id: VETA, name: "veta-backend-fastapi", folder: "/Users/juanfer/Codes/Letz/veta-backend-fastapi" };
+assert.deepEqual(ve(abierto({ ...antes, name: "Backend & Web" })), ve(abierto(antes)));
+assert.deepEqual(ve(abierto({ ...antes, name: "Backend & Web" })), ["veta"]);
+// Un espacio que se llama como otro no ve sus iniciativas.
+assert.deepEqual(ve(abierto({ id: "sp704097cca7bb40b2f92afc705822b649", name: "herdr-flota", folder: "/x" })), []);
+// Archivos viejos con nombres: un aviso de una línea, sin adivinar; sigue en los espacios que sí van por id.
+const viejo = leer("veta.json", `{"producto":"Veta","espacios":["Backend & Web",{"nombre":"veta-frontend"},"${FLOTA}"]}`);
+assert.equal(viejo.error, 'veta.json: "espacios" lleva ids de espacio (sp…, en herdr-app ls), no nombres: «Backend & Web», «veta-frontend»');
+assert.deepEqual(viejo.espacios, [FLOTA]);
+assert.match(leer("x.json", `{"producto":"P","espacios":"${FLOTA}"}`).error, /"espacios" va como lista de ids/);
+assert.match(leer("x.json", '{"producto":"P","espacios":[3,""]}').error, /no nombres: «\?», «»/);
+assert.deepEqual(leer("x.json", `{"producto":"P","espacios":["${FLOTA}",{"id":"${VETA}","nombre":"lo que sea"}]}`).espacios, [FLOTA, VETA]);
+assert.deepEqual(leer("x.json", '{"producto":"P","espacios":null}').espacios, []);
 assert.deepEqual(["/Users/juanfer", "/home/u/", "/root", "", "~"].map(esHome), [true, true, true, true, true]);
 assert.deepEqual(["/Users/juanfer/Codes", "~/Codes/x", "/srv/u"].map(esHome), [false, false, false]);
 console.log("ok");

@@ -17,13 +17,14 @@ const porClave = (k) => (a, b) => { const x = k(a), y = k(b); return x[0] - y[0]
 const urgente = (p) => !p.error && [...p.epicas.flatMap((e) => e.tareas), ...p.sueltas].some((t) => rango(t.estado) <= 1);
 export const ordenar = (productos) => [...productos].sort(porClave((p) => [urgente(p) ? 0 : 1, 0]));
 
-// Por espacio: cada producto dice en `espacios` los nombres de los espacios de Shepherdr donde se ve. Home ve todos;
-// un producto sin `espacios` solo se ve en Home. espacio: { nombre, home } del espacio abierto; null: todos.
+// Por espacio: cada producto dice en `espacios` los ids de los espacios de Shepherdr donde se ve (el `sp…` de
+// `herdr-app ls`, que no cambia al renombrar ni al reiniciar). Nunca el nombre. Home ve todos; un producto sin
+// `espacios` solo se ve en Home. espacio: { id, home } del espacio abierto; null: todos.
 export function delEspacio(productos, espacio) {
   if (!espacio || espacio.home) return productos;
-  const n = espacio.nombre.toLowerCase();
-  return productos.filter((p) => p.espacios?.some((e) => e.toLowerCase() === n));
+  return productos.filter((p) => p.espacios?.includes(espacio.id));
 }
+export const esId = (v) => typeof v === "string" && /^sp[0-9a-f]{16,}$/.test(v);
 // Home, como lo distingue Shepherdr: el espacio en la carpeta de inicio de su máquina, no su nombre. Vale la carpeta
 // del escritorio ("" = la de su máquina, /Users/<u>, /home/<u>, /root) y la de la web ("~").
 export const esHome = (carpeta) => !carpeta || carpeta === "~" || /^\/(home\/[^/]+|Users\/[^/]+|root)\/?$/.test(carpeta);
@@ -37,10 +38,14 @@ export function leer(archivo, texto, respuestas = null) {
   let d;
   try { d = JSON.parse(texto); } catch { return { archivo, error: `${archivo}: no es JSON válido` }; }
   // Un archivo que se lee pero está mal sigue en sus espacios; uno que ni se lee, solo en Home.
-  const espacios = Array.isArray(d?.espacios) ? d.espacios.filter((e) => typeof e === "string" && e) : [];
+  // Cada uno, "sp…" o { "id": "sp…", "nombre": "…" } (el nombre es solo para leer a ojo). Un nombre suelto no se adivina.
+  const lista = Array.isArray(d?.espacios) ? d.espacios : [];
+  const espacios = lista.map((e) => (typeof e === "string" ? e : e?.id)).filter(esId);
+  const nombres = lista.filter((e) => !esId(typeof e === "string" ? e : e?.id)).map((e) => (typeof e === "string" ? e : str(e?.nombre) || "?"));
   const mal = (m) => ({ archivo, espacios, error: `${archivo}: ${m}` });
   if (!d || typeof d !== "object" || typeof d.producto !== "string" || !d.producto) return mal(`falta "producto"`);
-  if (d.espacios != null && !Array.isArray(d.espacios)) return mal('"espacios" va como lista de nombres de espacio');
+  if (d.espacios != null && !Array.isArray(d.espacios)) return mal('"espacios" va como lista de ids de espacio (sp…)');
+  if (nombres.length) return mal(`"espacios" lleva ids de espacio (sp…, en herdr-app ls), no nombres: ${nombres.map((n) => `«${n}»`).join(", ")}`);
   const epicas = d.epicas ?? [], sueltas = d.sueltas ?? [];
   if (!Array.isArray(epicas) || !Array.isArray(sueltas)) return mal(`"epicas" y "sueltas" van como listas`);
   for (const e of epicas) if (!Array.isArray(e?.tareas ?? [])) return mal(`las "tareas" de una épica van como lista`);

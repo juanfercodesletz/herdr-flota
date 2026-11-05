@@ -1,6 +1,6 @@
 {
   "producto": "Veta",
-  "espacios": ["Backend & Web", "veta-frontend"],
+  "espacios": [{ "id": "spb83c5f1d4731ea1f84df503dfb0f14eb", "nombre": "Backend & Web" }, { "id": "sp0123456789abcdef0123456789abcdef", "nombre": "veta-frontend" }],
   "epicas": [
     {
       "id": "86e3yj2qg",
