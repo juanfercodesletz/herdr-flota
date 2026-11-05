@@ -1,7 +1,8 @@
 # Mover un producto de la Herdr de terminal a Shepherdr
 
-Receta corta, sacada de mover English Learning (HF-3, 4-nov-2026). Lo viejo no se toca: el workspace de la
-Herdr de terminal, sus worktrees y sus cambios sin commitear quedan como están hasta que Juan decida.
+Receta corta, sacada de mover English Learning al espacio «English Platform V2» (HF-3, 4-nov-2026).
+Lo viejo no se toca: el workspace de la Herdr de terminal, sus worktrees y sus cambios sin commitear quedan
+como están hasta que Juan decida.
 
 ## 1. El espacio
 
@@ -13,6 +14,10 @@ herdr-app do space.new --name "<Nombre>" --folder <repo>
   de shell vacía: ciérrala con `herdr-app do tab.close --id <tab> --confirmed true` (el `tab` que imprimió).
 - El Assistant arranca con el primer mensaje que se le escribe en su chat, en la carpeta del repo, con el ajuste
   `coordinator` de `~/.herdr/shepherdr.json` (hoy Claude `opus[1m]` high).
+- El nombre lo decide Juan y puede cambiar (a English Learning lo llamó «English Platform V2»): respétalo y
+  **nunca lo uses como referencia**. Lo que no cambia es el id del espacio (`"space"` que imprime `space.new`,
+  o `id` en `herdr-app ls`; el de English Platform V2 es `spca5a2ff106db74534475f40f298c9ff5`). Un Assistant
+  sabe el suyo por su etiqueta `herdr.coordinator.space` (`hc get $HC_TERMINAL_ID`).
 - Comprueba: `herdr-app ls` lo lista con su carpeta.
 
 ## 2. La sección de la barra lateral
@@ -27,8 +32,10 @@ arrastra el espacio dentro. En la web el menú del espacio no tiene «Mover a se
   (`coordinator`) y las notas de inicio y fin de las **tareas** (las leen los workers, no el Assistant).
 - La plantilla global (`~/.config/herdr-core/templates/assistant.md`) ya trae la sección «You are also this
   product's TPM»: el Assistant es TPM del producto cuyo `~/.herdr/flota/<producto>.json` lo nombra primero en
-  `espacios` (por nombre del espacio). Crear ese archivo basta para que se sepa TPM; lo demás, la skill
-  `iniciativas-flota`.
+  `espacios`. Crear ese archivo basta para que se sepa TPM; lo demás, la skill `iniciativas-flota`.
+- `espacios` debe llevar **ids** de espacio (`["spca5a2ff106db74534475f40f298c9ff5"]`), no nombres. Pendiente:
+  hoy el panel Iniciativas (HF-11, `mods/flota-iniciativas/iniciativas.js`), la skill y `herdr-flota.json`
+  todavía comparan por nombre, así que un espacio renombrado pierde sus iniciativas hasta que se cambie a id.
 - Lo propio del producto (cómo se orquesta, dónde están las tarjetas) va fuera del repo, como la skill
   `orquestacion-elr`. No lo pongas en el AGENTS.md o CLAUDE.md del repo del producto.
 
