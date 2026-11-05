@@ -17,3 +17,4 @@
 - Prueba del doctor: `python3 shell/prueba-doctor.py` (HOME falso en /tmp, hc/herdr-app/launchctl falsos en el PATH; ~15 s).
 - `~/.claude/skills/iniciativas-flota` es un enlace a la de `~/.claude-work`: edita una sola.
 - Prueba del hook de credenciales: `zsh shell/prueba-credenciales.zsh` (HOME falso; corre install.sh entero con uname, tailscale y shepherdr de mentira, así que no toca servicios). Para una sesión real sin tocar los perfiles: `claude -p --settings ‹json con el hook›`.
+- Para la web con datos de prueba: un vite.config extra en la copia de shepherdr/web con un middleware que sirve /flota/entorno.json desde un archivo, y /api con proxy al tailnet (/shepherdr + cabecera origin).
