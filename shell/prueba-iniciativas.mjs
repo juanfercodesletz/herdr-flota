@@ -137,6 +137,10 @@ const asoma = gantt(sola, [M({ ref: "HF-1", estado: "running", started: B(17, 40
 const [a1, a3] = ["HF-1", "HF-3"].map((id) => asoma.grupos[0].filas.find((f) => f.id === id));
 assert.deepEqual([a1.barras, a1.sinBarra, a1.nota, asoma.h0], [[], "sin trabajo hoy (ayer 17:40–00:12)", "se detuvo a las 00:12", 9]);
 assert.equal(a3.sinBarra, "");
+// Revisión de codex: trabajó ayer, quedó lista a las 23:59 y se mergeó a las 00:05: no tiene tramo hoy, pero entra (y va
+// en «Listo hoy») con su texto.
+const anoche = gantt(sola, [M({ ref: "HF-1", started: B(22) - 86400000, ready_at: B(23, 59) - 86400000, done_at: B(0, 5) })], B(11) / 1000);
+assert.deepEqual([anoche.grupos[0].filas[0].sinBarra, pie(sola, anoche).produccion.items], ["sin trabajo hoy (ayer 22:00–23:59)", ["Una · terminada a las 00:05"]]);
 assert.equal(cruza.grupos[0].filas[0].sinBarra, "");
 // HF-20: los rótulos del eje no chocan ni se salen de la pista: primero ahora, después las salidas (con nombre), al final
 // las horas. A las 22:13 en 520 px caben las dos salidas; en 300 px, la de las 19 no cabe junto a ahora y se van las

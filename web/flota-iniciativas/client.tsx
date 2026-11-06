@@ -257,6 +257,7 @@ function Gantt({ p, medidas, at, mias, setMias }: { p: Producto; medidas: unknow
   const g = gantt(p, medidas) as G
   const { produccion, riesgos } = pie(p, g) as { produccion: { titulo: string; items: string[] }; riesgos: string[] }
   const [ref, ancho] = useAncho()
+  const [enteros, setEnteros] = useState<Record<string, boolean>>({}) // las filas con el título entero (tocadas)
   const w = Math.max(160, ancho - 26) // la pista: la tarjeta menos su relleno (12 + 12) y su borde
   const equipos = [...new Set(g.grupos.flatMap((x) => x.filas).map((f) => f.equipo))].filter((e) => EQUIPO_BG[e])
   const tarjeta = (titulo: string, items: string[], vacio: string) => (
@@ -281,24 +282,33 @@ function Gantt({ p, medidas, at, mias, setMias }: { p: Producto; medidas: unknow
           </h4>
           {ancho ? <Regla g={g} w={w} /> : null}
           {x.filas.map((f, i) => {
+            const k = `${x.salida}#${f.id || i}`
             const body = (
               <>
                 <span className="flex min-w-0 items-center gap-1.5 text-[0.6875rem]">
                   {f.quien ? <span className={clsx('shrink-0 font-semibold tracking-wide uppercase', EQUIPO[f.quien] || 'text-fg3')}>{f.quien}</span> : null}
                   <span className={clsx('shrink-0 rounded-full px-1.5 leading-4 text-bg', DOT[tonoChip(f)])}>{chip(f)}</span>
-                  <span className={clsx('shrink-0', f.link ? 'text-focus underline underline-offset-2' : 'text-fg3')}>{f.enlace || 'sin enlace'}</span>
+                  {isLink(f.link) ? (
+                    <a href={f.link} target="_blank" rel="noreferrer" onClick={(ev) => ev.stopPropagation()} className="shrink-0 text-focus underline underline-offset-2">{f.enlace || 'enlace'}</a>
+                  ) : <span className="shrink-0 text-fg3">{f.enlace || 'sin enlace'}</span>}
                 </span>
-                <span className={clsx('line-clamp-2 text-[0.875rem] leading-snug font-medium max-sm:text-[0.9375rem]', f.hecha ? 'text-fg2' : 'text-fg')}>{f.titulo}</span>
-                <span className="truncate text-[0.75rem] text-fg3 max-sm:text-[0.8125rem]">{f.nota}</span>
+                <span className={clsx(!enteros[k] && 'line-clamp-2', 'text-[0.875rem] leading-snug font-medium max-sm:text-[0.9375rem]', f.hecha ? 'text-fg2' : 'text-fg')}>{f.titulo}</span>
+                <span className={clsx(!enteros[k] && 'truncate', 'text-[0.75rem] text-fg3 max-sm:text-[0.8125rem]')}>{f.nota}</span>
                 {ancho ? <Pista f={f} g={g} w={w} /> : null}
               </>
             )
-            const cls = 'flex flex-col gap-0.5 border-t border-line py-2'
-            const title = [f.titulo, f.nota].filter(Boolean).join('\n')
-            return isLink(f.link) ? (
-              <a key={f.id || i} href={f.link} target="_blank" rel="noreferrer" title={title} className={clsx(cls, 'press -mx-2 rounded-row px-2 hover:bg-hover')}>{body}</a>
-            ) : (
-              <div key={f.id || i} title={title} className={cls}>{body}</div>
+            // Tocar la fila muestra (o vuelve a cortar) el título y la nota enteros; el enlace va en su palabra.
+            return (
+              <div
+                key={k}
+                role="button"
+                tabIndex={0}
+                aria-expanded={Boolean(enteros[k])}
+                title={[f.titulo, f.nota].filter(Boolean).join('\n')}
+                onClick={() => setEnteros((e) => ({ ...e, [k]: !e[k] }))}
+                onKeyDown={(ev) => (ev.key === 'Enter' || ev.key === ' ') && (ev.preventDefault(), setEnteros((e) => ({ ...e, [k]: !e[k] })))}
+                className="press -mx-2 flex cursor-pointer flex-col gap-0.5 rounded-row border-t border-line px-2 py-2 hover:bg-hover"
+              >{body}</div>
             )
           })}
         </section>

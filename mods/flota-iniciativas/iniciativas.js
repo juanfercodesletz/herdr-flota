@@ -219,12 +219,13 @@ export function gantt(p, medidas = [], now = Date.now() / 1000) {
       if (b != null) { barras[0][1] = b; barras[0][3] = t.estimada; }
     }
     const hoy = barras.filter(([x, y]) => y > x && y > 0 && x < 24);
-    if (!hoy.length) continue;
+    // Sin tramo hoy entra igual si herdr-task la movió hoy (se mergeó a las 00:05 tras trabajar ayer): su fila lo dice.
+    if (!hoy.length && !ms.length) continue;
     const visibles = hoy.filter(([x, y]) => x >= 0 || y >= ASOMA);
     const ultima = ms[ms.length - 1], link = t.link || ultima?.pr || "";
     // El equipo (AI, Backend…) lo pone el TPM; sin él, nada: el asiento de herdr-task es un modelo, no un equipo.
     filas.push({ ...t, barras: visibles, link, enlace: enlace(link), quien: t.equipo, nota: t.nota || (ultima ? notaDe(ultima) : "") || t.de,
-      sinBarra: visibles.length ? "" : `sin trabajo hoy (${hhmm(hoy[0][0])}–${hhmm(Math.max(...hoy.map(([, y]) => y)))})`,
+      sinBarra: visibles.length ? "" : `sin trabajo hoy (${hhmm(barras[0][0])}–${hhmm(((Math.max(...barras.map(([, y]) => y)) % 24) + 24) % 24)})`,
       hecha: t.estado === "merged" || (ms.length > 0 && ms.every((m) => m.estado === "done")), espera: ms.some((m) => m.estado === "ready") });
   }
   // De la primera hora con algo a la última o a la de ahora (con un margen), al menos 4 h; rayas cada 1, 2, 3, 4 o 6 h.
