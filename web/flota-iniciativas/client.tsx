@@ -290,7 +290,8 @@ function Gantt({ p, medidas, at, mias, setMias }: { p: Producto; medidas: unknow
 /** una decisión con lo que se tocó aquí encima (mientras el TPM no la cierre) */
 function conMia(p: Producto, d: Decision, mias: Mias): Decision {
   const m = mias[`${p.archivo}#${d.id}`]
-  return m && !m.error && d.estado !== 'cerrada' ? { ...d, estado: 'respondida', respuesta: m.respuesta, texto: m.texto } : d
+  // una foto escrita por un panel anterior a HF-19 no trae `texto`
+  return m && !m.error && d.estado !== 'cerrada' ? { ...d, estado: 'respondida', respuesta: m.respuesta, texto: m.texto } : { ...d, texto: d.texto ?? '' }
 }
 const abiertasDe = (p: Producto, mias: Mias) => (p.error ? 0 : (p.decisiones ?? []).filter((d) => conMia(p, d, mias).estado === 'abierta').length)
 
