@@ -25,6 +25,7 @@ Diseño (canvas): https://claude.ai/artifact/5rVDW3BgbwVmEpvcSkQ9Lj — ronda 3 
 | Épicas, tareas y sus estados | ClickUp | el TPM (único escritor) |
 | Estado real de cada sesión | herdr-core | los agentes |
 | PRs y CI | GitHub | los agentes |
+| Horas de cada tarea (Gantt) | herdr-task (`~/.herdr/tasks/<carpeta>.json`) | herdr-task, al arrancar, quedar lista y aceptarse |
 | Decisiones | base de datos del artefacto del Gantt | agentes (preguntas), Juan (respuestas) |
 
 Herdr no puede leer la base de datos de un artefacto (verificado el 4-nov-2026: `claude -p`
@@ -174,12 +175,30 @@ Dos pestañas más en el mismo panel, junto a Iniciativas (en la app y en la web
 
 - **Tablero:** una columna por estado de tarea (`en cola`, `en curso`, `auditoría`, `PR abierto`, `bloqueada`), tarjetas del
   mismo alto; lo `merged` solo se cuenta. Clic en una tarjeta → su link. Angosto (el teléfono), una columna debajo de otra.
-- **Gantt:** el plan del día como lo pide la skill `gantt-flota`: un bloque por salida a producción, cada fila con su chip,
-  equipo y nota, y una barra sobre las 06:00–21:00 de Bogotá; rayas en las salidas de 07, 12 y 19 y la hora actual en
-  naranja. Barra sólida = en marcha, contorno = estimada, tenue = ya hecha. En el teléfono la barra va debajo del nombre.
+- **Gantt:** el día como lo pide la skill `gantt-flota`, sin que nadie escriba horas: una fila por tarea de hoy, con
+  quién la hace (`equipo`, o el asiento de su agente: «claude opus»), un chip de una palabra, su enlace (ClickUp o el PR),
+  el nombre, una nota de una línea y sus barras sobre las 06:00–21:00 de Bogotá (de noche el eje se estira hasta la hora
+  actual). Rayas en las salidas de 07, 12 y 19, la hora actual en naranja y «Revisado HH:MM». Barra sólida = medida o
+  escrita, rayada (en el escritorio, punteada) = estimada, tenue = ya terminada. En el teléfono la barra va debajo del
+  nombre. Al pie: cuántas decisiones esperan (lleva a su pestaña), «Listo hoy» o «Ya en producción», y «Riesgos».
 
-El Gantt usa campos **opcionales** de cada tarea (épica o suelta). Sin ellos Iniciativas y Tablero no cambian, y el Gantt
-de ese producto dice en una línea que no hay plan del día. Solo entran al Gantt las tareas con `salida`.
+**De dónde salen las horas.** De herdr-task: cada tarea de `~/.herdr/tasks/<carpeta>.json` trae `started` (arrancó su
+agente), `ready_at` (quedó lista), `done_at` (se aceptó y mergeó) y, mientras corre, lo que dijo que le falta
+(`progress.left`). El panel del escritorio las lee en cada vuelta (las que corren, esperan o se movieron en los dos
+últimos días) y las pone en la foto de la web, en `medidas`. Con eso cada tarea de hoy lleva:
+
+- una barra de `started` a `ready_at` (si sigue corriendo, hasta ahora; si sus agentes ya terminaron sin quedar lista,
+  hasta que se detuvo), tenue si ya está hecha;
+- si corre, una rayada de ahora a lo que le falta según su último `herdr-task status --left`;
+- si quedó lista, otra de `ready_at` a ahora («te espera»), o a `done_at` si ya se aceptó («visto bueno», tenue).
+
+La tarea de iniciativas se enlaza con la de herdr-task, en este orden: su `id` igual al `ref` de herdr-task (`HF-17`:
+así van herdr-flota y English Learning); si no, dentro de los `espacios` del producto, el terminal de `sesion` entre sus
+agentes, su `link` igual al PR, o el código del título antes de « · » (`E4.1 · …` en los dos lados: así van las de VETA,
+cuyos ids son de ClickUp). El 5-nov, con los datos reales, el código del título enlaza 18 de las 39 de VETA (la
+`sesion`, 6); el `ref`, 19 de 22 en herdr-flota y 58 de 83 en English Learning.
+
+Lo que escribe el TPM sigue valiendo y manda sobre lo medido (todos los campos son **opcionales**):
 
 ```json
 { "id": "86e3yk0t5", "titulo": "Refrescar la OC desde Siigo", "estado": "bloqueada",
@@ -188,11 +207,17 @@ de ese producto dice en una línea que no hay plan del día. Solo entran al Gant
 ```
 
 - `salida`: `"HH:MM"` de hoy (`"12:00"`, `"19:00"`), `"mañana"` (sale «Mañana o después») u otro texto (`"7 nov"`).
-- `desde` y `hasta`: `"HH:MM"` de hoy, hora de Bogotá; la barra va de cuándo empezó a cuándo debería quedar lista.
-  Sin las dos (o mal escritas), la fila sale sin barra. `estimada: true` la dibuja en contorno.
-- `ritmo`: el chip de una palabra, `a tiempo`, `en riesgo`, `atrasado` o `te espera`. Sin él, el chip es el estado
-  (`listo` si está `merged`).
-- `nota`: una línea corta (número de PR y lo que sigue). `equipo`: `AI`, `Backend`, `Frontend`, `Acciones`, `DevOps`…
+  Agrupa las filas por salida a producción; sin ella, la fila va en el bloque «Hoy».
+- `desde` y `hasta`: `"HH:MM"` de hoy, hora de Bogotá. Con las dos, la barra es esa y no la medida; con una sola,
+  cambia el inicio o el fin del primer tramo medido. `estimada: true` la dibuja rayada.
+- `ritmo`: el chip de una palabra, `a tiempo`, `en riesgo`, `atrasado` o `te espera`. Sin él: `listo` lo terminado,
+  `te espera` lo que quedó lista en herdr-task o tiene `PR abierto`, y el estado lo demás.
+- `nota`: una línea corta (número de PR y lo que sigue). Sin ella, la de herdr-task: su última línea de status mientras
+  corre, «lista a las 15:13 · espera tu visto bueno», «PR #17 · mergeada a las 17:28». `equipo`: `AI`, `Backend`…
+
+Una tarea sin horas medidas hoy ni `desde`/`hasta` no entra; si no queda ninguna, el Gantt lo dice en una línea. Para el
+pie, el producto puede traer `produccion` (lo que ya salió, una frase por cosa) y `riesgos` (qué se rompe y para quién);
+sin ellos, el pie muestra lo terminado hoy y las tareas bloqueadas, en riesgo o atrasadas.
 
 ### Decisiones
 
