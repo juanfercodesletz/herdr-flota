@@ -133,8 +133,8 @@ export function tablero(p) {
 }
 
 // Gantt del día (skill gantt-flota): una fila por tarea de hoy, con sus barras sobre las 06:00–21:00 de Bogotá (el eje
-// se estira hasta las 24:00 para que quepan la hora actual y lo que se trabaja o se estima de noche; lo de antes de las
-// 06:00 queda pegado al borde).
+// se estira, entre las 00:00 y las 24:00, para que quepan la hora actual y lo que se trabajó hoy de madrugada o se trabaja
+// o estima de noche; lo que empezó ayer queda pegado al borde izquierdo).
 // Las horas salen solas de herdr-task (`medidas`: las tareas de ~/.herdr/tasks/*.json, que junta el panel del
 // escritorio y viajan en la foto de la web): de cuando arrancó su agente a cuando quedó lista, o hasta ahora si sigue.
 // `desde` y `hasta` del TPM mandan sobre lo medido; `salida` agrupa por salida a producción y sin ella la fila va en
@@ -169,9 +169,10 @@ export const LEYENDA = Object.entries(RITMOS).map(([c, t]) => [c, t, DICE[c] || 
 // terminal de `sesion`, el PR de `link` o el código del título («E4.1 · …», como los nombra el TPM de Letz).
 const codigo = (s) => /^(\S+) · /.exec(s || "")?.[1] || "";
 function medidasDe(t, medidas, espacios) {
-  const aqui = (m) => !espacios.length || espacios.includes(m.space), c = codigo(t.titulo);
-  return medidas.filter((m) => m.started && ((t.id && m.ref === t.id) || (aqui(m) &&
-    ((t.sesion && (m.agentes || []).includes(t.sesion)) || (t.link && m.pr === t.link) || (c && codigo(m.titulo) === c)))))
+  const aqui = (m) => !espacios.length || espacios.includes(m.space), c = codigo(t.titulo), con = medidas.filter((m) => m.started);
+  const suyas = t.id ? con.filter((m) => m.ref === t.id) : [];
+  return (suyas.length ? suyas : con.filter((m) => aqui(m) &&
+    ((t.sesion && (m.agentes || []).includes(t.sesion)) || (t.link && m.pr === t.link) || (c && codigo(m.titulo) === c))))
     .sort((a, b) => a.started - b.started);
 }
 // Vivo: corre y tiene algún agente sin terminar (todos terminados = se detuvo, en `fin`).
@@ -211,7 +212,7 @@ export function gantt(p, medidas = [], now = Date.now() / 1000) {
       if (a != null) barras[0][0] = a;
       if (b != null) { barras[0][1] = b; barras[0][3] = t.estimada; }
     }
-    const hoy = barras.filter(([x, y]) => y > x && y > H0 && x < 24);
+    const hoy = barras.filter(([x, y]) => y > x && y > 0 && x < 24);
     if (!hoy.length) continue;
     const ultima = ms[ms.length - 1], link = t.link || ultima?.pr || "";
     filas.push({ ...t, barras: hoy, link, enlace: enlace(link), quien: t.equipo || ultima?.asiento || "", nota: t.nota || (ultima ? notaDe(ultima) : "") || t.de,
@@ -219,14 +220,18 @@ export function gantt(p, medidas = [], now = Date.now() / 1000) {
   }
   const yo = (now - d0) / 3600, todas = filas.flatMap((f) => f.barras);
   const fin = Math.min(24, Math.max(H1, ...(filas.length ? [Math.ceil(yo + 0.01)] : []), ...todas.map(([, y]) => Math.ceil(y))));
-  // Estirado, el eje termina en una hora rotulada (cada 3 h si pasa de 16 h).
-  const h0 = H0, paso = fin - h0 > 16 ? 3 : 2, h1 = fin === H1 ? H1 : Math.min(24, h0 + paso * Math.ceil((fin - h0) / paso));
+  // Empieza antes de las 06:00 si algo empezó hoy antes; estirado, termina en una hora rotulada (cada 3 h si pasa de 16 h).
+  const h0 = Math.min(H0, ...todas.filter(([x]) => x >= 0).map(([x]) => Math.floor(x)));
+  const paso = fin - h0 > 16 ? 3 : 2, h1 = fin === H1 && h0 === H0 ? H1 : Math.min(24, h0 + paso * Math.ceil((fin - h0) / paso));
   const grupos = new Map();
   for (const f of filas) {
-    f.barras = f.barras.map(([x, y, texto, estimada, hecha, tono]) => {
-      const l = pos(x, h0, h1);
-      return { x: l, w: Math.min(100 - l, Math.max(0.6, pos(y, h0, h1) - l)), texto: texto ?? `${hhmm(x)}–${hhmm(y)}`, estimada: Boolean(estimada), hecha: Boolean(hecha), tono: tono || "" };
+    // Lo que empezó ayer y terminó antes del eje no se ve: la fila sale si le queda alguna barra.
+    f.barras = f.barras.filter(([, y]) => y > h0).map(([x, y, texto, estimada, hecha, tono]) => {
+      // Una barra muy corta se ensancha hacia atrás: su fin sigue en su hora (la de ahora, si corre).
+      const r = pos(y, h0, h1), w = Math.max(0.6, r - pos(x, h0, h1)), l = Math.max(0, r - w);
+      return { x: l, w: Math.min(100 - l, w), texto: texto ?? `${hhmm(x)}–${hhmm(y)}`, estimada: Boolean(estimada), hecha: Boolean(hecha), tono: tono || "" };
     });
+    if (!f.barras.length) continue;
     if (!grupos.has(f.salida)) grupos.set(f.salida, []);
     grupos.get(f.salida).push(f);
   }

@@ -178,7 +178,7 @@ Dos pestañas más en el mismo panel, junto a Iniciativas (en la app y en la web
 - **Gantt:** el día como lo pide la skill `gantt-flota`, sin que nadie escriba horas: una fila por tarea de hoy, con
   quién la hace (`equipo`, o el asiento de su agente: «claude opus»), un chip de una palabra, su enlace (ClickUp o el PR),
   el nombre entero (en varias líneas si es largo), una nota de una línea y sus barras sobre las 06:00–21:00 de Bogotá (de
-  noche el eje se estira hasta la hora actual). Arriba, «Revisado HH:MM» y la leyenda de chips y barras. Rayas en las
+  noche el eje se estira hasta la hora actual, y de madrugada hasta lo que empezó hoy antes de las 06:00). Arriba, «Revisado HH:MM» y la leyenda de chips y barras. Rayas en las
   salidas de 07, 12 y 19 y la hora actual en naranja. Barra sólida = medida o escrita, rayada (en el escritorio,
   punteada: gpui no raya fondos) = estimada, tenue = ya terminada. En el teléfono la barra va debajo del nombre. Al pie:
   «Listo hoy» o «Ya en producción», «Riesgos», y «Decisiones que esperan por ti», que se responden ahí mismo con las
@@ -195,7 +195,7 @@ agente), `ready_at` (quedó lista), `done_at` (se aceptó y mergeó) y, mientras
 - si quedó lista, otra de `ready_at` a ahora («te espera»), o a `done_at` si ya se aceptó («visto bueno», tenue).
 
 La tarea de iniciativas se enlaza con la de herdr-task, en este orden: su `id` igual al `ref` de herdr-task (`HF-17`:
-así van herdr-flota y English Learning); si no, dentro de los `espacios` del producto, el terminal de `sesion` entre sus
+así van herdr-flota y English Learning; si hay, solo cuenta ese); si no, dentro de los `espacios` del producto, el terminal de `sesion` entre sus
 agentes, su `link` igual al PR, o el código del título antes de « · » (`E4.1 · …` en los dos lados: así van las de VETA,
 cuyos ids son de ClickUp). El 5-nov, con los datos reales, el código del título enlaza 18 de las 39 de VETA (la
 `sesion`, 6); el `ref`, 19 de 22 en herdr-flota y 58 de 83 en English Learning.

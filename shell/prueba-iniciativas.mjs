@@ -104,6 +104,15 @@ assert.deepEqual([textos("86e4"), fila("86e4").quien, fila("86e4").hecha], [["08
 assert.equal(fila("86e3"), undefined); // mismo código, otro espacio
 assert.equal(fila("HF-9"), undefined); // de ayer
 assert.equal(fila("HF-30"), undefined); // sin horas
+// Revisión: el ref manda solo (otra tarea por sesion no se suma); lo trabajado hoy de madrugada estira el eje; una barra
+// de un minuto termina en la raya de ahora, no después.
+const sola = leer("r.json", JSON.stringify({ producto: "R", espacios: [SP], sueltas: [S("HF-1", "Una", "merged", { sesion: "t9" }), S("x", "Madrugada", "merged", { sesion: "t8" }), S("HF-3", "Recién", "en curso")] }));
+const otras = [M({ ref: "HF-1", started: B(9), ready_at: B(10), done_at: B(10), pr: "https://github.com/o/r/pull/1" }), M({ ref: "HF-2", estado: "running", started: B(11), agentes: ["t9"] }),
+  M({ ref: "HF-7", started: B(2), ready_at: B(3), done_at: B(3), agentes: ["t8"] }), M({ ref: "HF-3", estado: "running", started: B(16, 59) })];
+const r = gantt(sola, otras, B(17) / 1000), deR = (id) => r.grupos[0].filas.find((f) => f.id === id);
+assert.deepEqual([deR("HF-1").barras.map((b) => b.texto), deR("HF-1").enlace, deR("HF-1").hecha], [["09:00–10:00"], "PR #1", true]);
+assert.deepEqual([r.h0, deR("x").barras[0].texto, deR("x").barras[0].x], [2, "02:00–03:00", 0]);
+assert.ok(Math.abs(deR("HF-3").barras[0].x + deR("HF-3").barras[0].w - pos(r.ya, r.h0, r.h1)) < 1e-9);
 // De noche el eje se estira hasta la hora actual (y lo estimado), sin pasar de las 24.
 const noche = gantt(hf, medidas, B(22, 13) / 1000);
 assert.deepEqual([noche.h1, noche.ya.toFixed(2), noche.marcas.at(-1)], [24, "22.22", 24]);
