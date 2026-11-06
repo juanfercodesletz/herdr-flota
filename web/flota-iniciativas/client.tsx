@@ -306,7 +306,7 @@ function Gantt({ p, medidas, at, mias, setMias }: { p: Producto; medidas: unknow
                 aria-expanded={Boolean(enteros[k])}
                 title={[f.titulo, f.nota].filter(Boolean).join('\n')}
                 onClick={() => setEnteros((e) => ({ ...e, [k]: !e[k] }))}
-                onKeyDown={(ev) => (ev.key === 'Enter' || ev.key === ' ') && (ev.preventDefault(), setEnteros((e) => ({ ...e, [k]: !e[k] })))}
+                onKeyDown={(ev) => ev.target === ev.currentTarget && (ev.key === 'Enter' || ev.key === ' ') && (ev.preventDefault(), setEnteros((e) => ({ ...e, [k]: !e[k] })))}
                 className="press -mx-2 flex cursor-pointer flex-col gap-0.5 rounded-row border-t border-line px-2 py-2 hover:bg-hover"
               >{body}</div>
             )
