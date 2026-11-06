@@ -156,6 +156,9 @@ const tf = textosFila(fila("HF-17"), 520);
 assert.deepEqual([tf.barras.map((b) => b.dentro), tf.fuera], [[true], null]);
 const angosta = textosFila(fila("HF-17"), 120);
 assert.deepEqual([angosta.barras[0].dentro, angosta.fuera.texto, angosta.fuera.ancla], [false, "14:08–17:25", "der"]); // a la derecha no hay sitio: antes de la barra
+// Si solo la primera barra no cabe (el trabajo, antes de una espera larga), su texto va antes de ella, no tras la espera.
+const dos = textosFila({ sinBarra: "", barras: [{ x: 25, w: 5, texto: "02:59–03:39" }, { x: 30, w: 54, texto: "visto bueno" }] }, 545);
+assert.deepEqual([dos.barras.map((b) => b.dentro), dos.fuera.ancla, dos.fuera.texto], [[false, true], "der", "02:59–03:39"]);
 assert.deepEqual(textosFila(a1, 300).fuera, { texto: "sin trabajo hoy (ayer 17:40–00:12)", x: (4 / 300) * 100, w: 100 - (4 / 300) * 100, ancla: "izq" });
 // El pie: lo listo hoy (o `produccion` del TPM), los riesgos (o `riesgos`) y las decisiones que esperan.
 assert.deepEqual(pie(hf, m), { produccion: { titulo: "Listo hoy", items: ["Escrita · terminada a las 12:00", "Por PR · PR #4 · mergeada a las 09:30", "Chip · PR #17 · mergeada a las 17:28", "Entorno · terminada a las 17:24"] }, riesgos: [], decisiones: 0 });

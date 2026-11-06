@@ -261,7 +261,7 @@ export function gantt(p, medidas = [], now = Date.now() / 1000) {
 // por carácter (de más, para no quedarse corto). Devuelve [{ h, texto, tipo: ahora|salida|hora, x (% de la izquierda
 // del rótulo), w (px) }].
 const hh = (h) => `${String(h % 24).padStart(2, "0")}:00`;
-export function eje(g, ancho, letra = 6.2) {
+export function eje(g, ancho, letra = 5.8) {
   const todos = [
     ...(g.ya != null ? [{ h: g.ya, texto: `ahora ${hhmm(g.ya)}`, tipo: "ahora" }] : []),
     ...SALIDAS.filter((h) => h >= g.h0 && h <= g.h1).map((h) => ({ h, texto: `salida ${hh(h)}`, tipo: "salida" })),
@@ -287,7 +287,9 @@ export function textosFila(f, ancho, letra = 6.2) {
   const fin = Math.max(0, ...f.barras.map((b) => b.x + b.w)), ini = Math.min(100, ...f.barras.map((b) => b.x)), gap = (4 / ancho) * 100;
   const der = 100 - fin - gap, izq = ini - gap, cabe = ((texto.length * letra) / ancho) * 100;
   if (Math.max(der, izq) < 8) return { barras, fuera: null };
-  return { barras, fuera: der >= cabe || der >= izq ? { texto, x: fin + gap, w: der, ancla: "izq" } : { texto, x: ini - gap, w: izq, ancla: "der" } };
+  // Si solo la primera barra no cabe, su texto va antes de ella (si cabe ahí); si no, después de la última.
+  const antes = barras.length > 0 && !barras[0].dentro && barras.slice(1).every((b) => b.dentro) && izq >= cabe;
+  return { barras, fuera: !antes && (der >= cabe || der >= izq) ? { texto, x: fin + gap, w: der, ancla: "izq" } : { texto, x: ini - gap, w: izq, ancla: "der" } };
 }
 
 // Cómo se lee, en una línea al pie (como el subtítulo del artefacto). marca: cómo se ve lo estimado.

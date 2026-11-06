@@ -11,14 +11,14 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { definePlugin, placeOf, useSnap, useUI } from '@client/kernel.ts'
 import { Tab, Tabs } from '@client/ui.tsx'
-import { ahora, avance, chip, cuantas, dicha, esperan, explicacion, gantt, hace, hhmm, LEYENDA, pie, pos, rotulos, SALIDAS, SIN_ARCHIVO, SIN_INICIATIVAS, SIN_PLAN, delEspacio, esHome, tablero, tono, tonoChip } from './iniciativas.js'
+import { ahora, avance, chip, cuantas, dicha, eje, esperan, explicacion, gantt, hace, hhmm, LEYENDA, pie, pos, SALIDAS, SIN_ARCHIVO, SIN_INICIATIVAS, SIN_PLAN, delEspacio, esHome, tablero, textosFila, tono, tonoChip } from './iniciativas.js'
 
 interface Tarea {
   id: string; titulo: string; estado: string; link: string; sesion: string
   salida: string; desde: string; hasta: string; estimada: boolean; ritmo: string; nota: string; equipo: string
 }
 interface Tramo { x: number; w: number; texto: string; estimada: boolean; hecha: boolean; tono: string }
-type Fila = Tarea & { de: string; barras: Tramo[]; hecha: boolean; espera: boolean; quien: string; enlace: string }
+type Fila = Tarea & { de: string; barras: Tramo[]; hecha: boolean; espera: boolean; quien: string; enlace: string; sinBarra: string }
 /** lo que devuelve gantt(): el eje en horas, la hora actual y los bloques */
 interface G { h0: number; h1: number; ya: number | null; marcas: number[]; grupos: { salida: string; titulo: string; filas: Fila[] }[] }
 interface Epica { id: string; titulo: string; estado: string; link: string; tareas: Tarea[] }
@@ -168,67 +168,97 @@ function Tablero({ p }: { p: Producto }) {
 
 // Rayada: lo estimado, como en el artefacto del Gantt.
 const RAYAS = { backgroundImage: 'repeating-linear-gradient(45deg, rgba(255,255,255,.3) 0 4px, transparent 4px 8px)' }
+interface Rotulo { h: number; texto: string; tipo: 'ahora' | 'salida' | 'hora'; x: number; w: number; ancla: 'izq' | 'centro' | 'der' }
+interface Fuera { texto: string; x: number; w: number; ancla: 'izq' | 'der' }
+
+/** el ancho de un elemento, en px, al día con el panel */
+function useAncho(): [(el: HTMLDivElement | null) => void, number] {
+  const [el, setEl] = useState<HTMLDivElement | null>(null)
+  const [w, setW] = useState(0)
+  useEffect(() => {
+    if (!el) return
+    const ro = new ResizeObserver(([e]) => setW(e.contentRect.width))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [el])
+  return [setEl, w]
+}
+
+/** el eje de un bloque: ahora, las salidas con su nombre y las horas que quepan, sin chocar ni salirse (eje()) */
+function Regla({ g, w }: { g: G; w: number }) {
+  return (
+    <div className="relative h-4 text-[0.6875rem] tabular-nums" aria-hidden="true">
+      {(eje(g, w, 6.6) as Rotulo[]).map((r) => (
+        <span
+          key={r.texto}
+          className={clsx('absolute flex whitespace-nowrap', r.ancla === 'centro' && 'justify-center', r.ancla === 'der' && 'justify-end',
+            r.tipo === 'ahora' ? 'font-semibold text-orange-500' : r.tipo === 'salida' ? 'font-semibold text-fg' : 'text-fg3')}
+          style={{ left: `${r.x}%`, width: r.w }}
+        >{r.texto}</span>
+      ))}
+    </div>
+  )
+}
 
 /** la pista de una fila: rayas finas en las horas rotuladas, punteadas en las salidas de 07, 12 y 19, la hora actual
- * en naranja y las barras con su texto (sólida = medida o escrita, rayada = estimada, tenue = ya terminada) */
-function Pista({ f, g }: { f: Fila; g: G }) {
+ * en naranja y las barras (sólida = medida o escrita, rayada = estimada, tenue = ya terminada). El texto de una barra va
+ * dentro si cabe y si no al lado (textosFila); lo de ayer que apenas asoma, en texto */
+function Pista({ f, g, w }: { f: Fila; g: G; w: number }) {
   const P = (h: number) => `${pos(h, g.h0, g.h1)}%`
+  const { barras, fuera } = textosFila(f, w, 5.8) as { barras: (Tramo & { dentro: boolean })[]; fuera: Fuera | null }
   return (
     <span className="relative mt-1 block h-5">
       {g.marcas.map((h) => <span key={h} className="absolute inset-y-0 border-l border-line" style={{ left: P(h) }} />)}
       {SALIDAS.filter((h) => h > g.h0 && h < g.h1).map((h) => <span key={h} className="absolute inset-y-0 border-l border-dashed border-fg3" style={{ left: P(h) }} />)}
-      {f.barras.map((b, i) => (
+      {barras.map((b, i) => (
         <span
           key={i}
           title={b.texto}
-          className={clsx('absolute inset-y-0 flex items-center overflow-hidden rounded-[4px] text-[0.625rem] font-medium whitespace-nowrap text-bg', b.tono ? DOT[b.tono] : EQUIPO_BG[f.equipo] || DOT[tonoChip(f)], b.hecha ? 'opacity-45' : b.estimada ? 'opacity-75' : 'opacity-90')}
-          style={{ left: `${b.x}%`, width: `${b.w}%`, ...(b.estimada ? RAYAS : {}) }}
+          className={clsx('absolute inset-y-0 flex items-center overflow-hidden rounded-[4px] text-[0.625rem] font-medium whitespace-nowrap', b.hecha ? 'text-fg' : 'text-bg')}
+          style={{ left: `${b.x}%`, width: `${b.w}%` }}
         >
+          {/* tenue o rayada, la opacidad va en el fondo y no en el texto, que se lee entero */}
+          <span className={clsx('absolute inset-0', b.tono ? DOT[b.tono] : EQUIPO_BG[f.equipo] || DOT[tonoChip(f)], b.hecha ? 'opacity-40' : b.estimada ? 'opacity-75' : 'opacity-90')} style={b.estimada ? RAYAS : undefined} />
           {/* el relleno va en el texto: la barra mide sus horas aunque sea de un minuto */}
-          <span className="px-1">{b.texto}</span>
+          {b.dentro ? <span className="relative px-1">{b.texto}</span> : null}
         </span>
       ))}
+      {fuera ? (
+        <span
+          className={clsx('absolute inset-y-0 flex min-w-0 items-center text-[0.625rem] text-fg2', fuera.ancla === 'der' && 'justify-end')}
+          style={fuera.ancla === 'izq' ? { left: `${fuera.x}%`, width: `${fuera.w}%` } : { right: `${100 - fuera.x}%`, width: `${fuera.w}%` }}
+        ><span className="truncate bg-bg px-0.5">{fuera.texto}</span></span>
+      ) : null}
       {g.ya != null ? <span className="absolute -inset-y-1 w-0.5 bg-orange-500" style={{ left: P(g.ya) }} /> : null}
     </span>
   )
 }
 
-/** la leyenda, arriba del eje como en el artefacto: los chips y qué es cada barra */
-function Leyenda({ equipos }: { equipos: string[] }) {
-  const barra = (texto: string, cls: string, style?: object) => (
-    <span className="inline-flex items-center gap-1.5"><span className={clsx('h-2.5 w-5 rounded-[3px]', cls)} style={style} />{texto}</span>
-  )
+/** cómo se lee, al pie como el subtítulo del artefacto: los chips y las barras */
+function Leyenda() {
   return (
-    <div className="flex flex-col gap-1.5 pb-2 text-[0.75rem] text-fg3">
-      {equipos.length ? (
-        <div className="flex flex-wrap gap-x-3 gap-y-1">
-          {equipos.map((e) => <span key={e} className="inline-flex items-center gap-1.5"><span className={clsx('size-2.5 rounded-[3px]', EQUIPO_BG[e])} />{e}</span>)}
-        </div>
-      ) : null}
+    <div className="flex flex-col gap-1.5 pt-2.5 text-[0.75rem] text-fg3">
       <div className="flex flex-wrap gap-x-3 gap-y-1">
         {(LEYENDA as [string, string, string][]).map(([c, t, dice]) => (
           <span key={c} className="inline-flex items-center gap-1"><span className={clsx('rounded-full px-1.5 leading-4 text-bg', DOT[t])}>{c}</span>{dice}</span>
         ))}
-        <span>sin ritmo, su estado</span>
       </div>
-      <div className="flex flex-wrap gap-x-3 gap-y-1">
-        {barra('medida o escrita', 'bg-fg2 opacity-90')}
-        {barra('estimada', 'bg-fg2 opacity-75', RAYAS)}
-        {barra('terminada', 'bg-ready opacity-45')}
-        <span className="inline-flex items-center gap-1.5"><span className="h-3 w-0.5 bg-orange-500" />ahora</span>
-      </div>
+      <p className="leading-snug">{explicacion('rayada')}</p>
     </div>
   )
 }
 
-/** el Gantt del día (skill gantt-flota): un bloque por salida («Hoy» sin salidas); cada fila con quién la hace, su chip,
- * su enlace, su nombre y su nota, y las barras debajo a todo el ancho, así se lee a 390 px sin desplazarse. Al pie, lo
- * listo hoy o ya en producción, los riesgos, y las decisiones que esperan, que se responden aquí mismo con las tarjetas
- * de la pestaña Decisiones (el mismo componente, el mismo guardado) */
+/** el Gantt del día (skill gantt-flota): una tarjeta por salida («Hoy» sin salidas) con su eje, como en el artefacto;
+ * cada fila con su equipo, su chip, su enlace, su nombre (hasta dos líneas; entero al pasar el dedo o el ratón) y su
+ * nota, y las barras debajo a todo el ancho, así se lee a 390 px sin desplazarse. Al pie, lo listo hoy o ya en
+ * producción, los riesgos, cómo se lee, y las decisiones que esperan, que se responden aquí mismo con las tarjetas de la
+ * pestaña Decisiones (el mismo componente, el mismo guardado) */
 function Gantt({ p, medidas, at, mias, setMias }: { p: Producto; medidas: unknown[]; at: number; mias: Mias; setMias: (f: (m: Mias) => Mias) => void }) {
   const g = gantt(p, medidas) as G
   const { produccion, riesgos } = pie(p, g) as { produccion: { titulo: string; items: string[] }; riesgos: string[] }
-  const P = (h: number) => `${pos(h, g.h0, g.h1)}%`
+  const [ref, ancho] = useAncho()
+  const w = Math.max(160, ancho - 26) // la pista: la tarjeta menos su relleno (12 + 12) y su borde
+  const equipos = [...new Set(g.grupos.flatMap((x) => x.filas).map((f) => f.equipo))].filter((e) => EQUIPO_BG[e])
   const tarjeta = (titulo: string, items: string[], vacio: string) => (
     <div className="rounded-lg border border-line px-3 py-2.5">
       <h4 className="text-[0.875rem] font-semibold">{titulo}</h4>
@@ -238,49 +268,46 @@ function Gantt({ p, medidas, at, mias, setMias }: { p: Producto; medidas: unknow
     </div>
   )
   return (
-    <div className="px-2">
-      <p className="pb-1.5 text-[0.8125rem] leading-snug text-fg2">{explicacion('rayada')}</p>
-      <p className="pb-1.5 text-[0.75rem] text-fg3">Revisado a las {hhmm(ahora(at, 0, 24) ?? 0)}</p>
-      {!g.grupos.length ? <p className="py-1 text-[0.875rem] text-fg3">{SIN_PLAN}</p> : (
-        <>
-          <Leyenda equipos={[...new Set(g.grupos.flatMap((x) => x.filas).map((f) => f.equipo))].filter((e) => EQUIPO_BG[e])} />
-          <div className="relative h-4 text-[0.6875rem] text-fg3 tabular-nums" aria-hidden="true">
-            {(rotulos(g, 0.27) as number[]).map((h) => (
-              <span key={h} className={clsx('absolute -translate-x-1/2', SALIDAS.includes(h) && 'text-fg2')} style={{ left: P(h) }}>{String(h % 24).padStart(2, '0')}</span>
-            ))}
-            {g.ya != null ? <span className="absolute z-10 bg-bg px-1 font-semibold whitespace-nowrap text-orange-500" style={{ left: P(g.ya), transform: g.ya > (g.h0 + g.h1) / 2 ? 'translateX(-100%)' : undefined }}>ahora {hhmm(g.ya)}</span> : null}
-          </div>
-          {g.grupos.map((x) => (
-            <section key={x.salida}>
-              <h4 className="pt-3 pb-1 text-[0.6875rem] font-semibold tracking-wide text-fg2 uppercase max-sm:text-[0.75rem]">{x.titulo}</h4>
-              {x.filas.map((f, i) => {
-                const body = (
-                  <>
-                    <span className="flex min-w-0 items-center gap-1.5 text-[0.6875rem]">
-                      {f.quien ? <span className={clsx('shrink-0 font-semibold tracking-wide uppercase', EQUIPO[f.quien] || 'text-fg3')}>{f.quien}</span> : null}
-                      <span className={clsx('shrink-0 rounded-full px-1.5 leading-4 text-bg', DOT[tonoChip(f)])}>{chip(f)}</span>
-                      <span className={clsx('shrink-0', f.link ? 'text-focus underline underline-offset-2' : 'text-fg3')}>{f.enlace || 'sin enlace'}</span>
-                    </span>
-                    <span className={clsx('text-[0.875rem] leading-snug font-medium max-sm:text-[0.9375rem]', f.hecha ? 'text-fg2' : 'text-fg')}>{f.titulo}</span>
-                    <span className="truncate text-[0.75rem] text-fg3 max-sm:text-[0.8125rem]">{f.nota}</span>
-                    <Pista f={f} g={g} />
-                  </>
-                )
-                const cls = 'flex flex-col gap-0.5 border-t border-line py-2'
-                return isLink(f.link) ? (
-                  <a key={f.id || i} href={f.link} target="_blank" rel="noreferrer" className={clsx(cls, 'press -mx-2 rounded-row px-2 hover:bg-hover')}>{body}</a>
-                ) : (
-                  <div key={f.id || i} className={cls}>{body}</div>
-                )
-              })}
-            </section>
-          ))}
-        </>
-      )}
-      <div className="mt-3 grid gap-2">
+    <div className="px-2" ref={ref}>
+      <p className="flex flex-wrap items-center gap-x-3 gap-y-1 pb-2 text-[0.75rem] text-fg3">
+        <span>Revisado a las {hhmm(ahora(at, 0, 24) ?? 0)}</span>
+        {equipos.map((e) => <span key={e} className="inline-flex items-center gap-1.5"><span className={clsx('size-2.5 rounded-[3px]', EQUIPO_BG[e])} />{e}</span>)}
+      </p>
+      {!g.grupos.length ? <p className="py-1 text-[0.875rem] text-fg3">{SIN_PLAN}</p> : g.grupos.map((x) => (
+        <section key={x.salida} className="mb-2.5 rounded-lg border border-line px-3 pt-2">
+          <h4 className="flex items-baseline gap-1.5 pb-1">
+            <span className="text-[0.875rem] font-semibold max-sm:text-[0.9375rem]">{x.titulo}</span>
+            <span className="text-[0.75rem] text-fg3">{x.filas.length} {x.filas.length === 1 ? 'tarea' : 'tareas'}</span>
+          </h4>
+          {ancho ? <Regla g={g} w={w} /> : null}
+          {x.filas.map((f, i) => {
+            const body = (
+              <>
+                <span className="flex min-w-0 items-center gap-1.5 text-[0.6875rem]">
+                  {f.quien ? <span className={clsx('shrink-0 font-semibold tracking-wide uppercase', EQUIPO[f.quien] || 'text-fg3')}>{f.quien}</span> : null}
+                  <span className={clsx('shrink-0 rounded-full px-1.5 leading-4 text-bg', DOT[tonoChip(f)])}>{chip(f)}</span>
+                  <span className={clsx('shrink-0', f.link ? 'text-focus underline underline-offset-2' : 'text-fg3')}>{f.enlace || 'sin enlace'}</span>
+                </span>
+                <span className={clsx('line-clamp-2 text-[0.875rem] leading-snug font-medium max-sm:text-[0.9375rem]', f.hecha ? 'text-fg2' : 'text-fg')}>{f.titulo}</span>
+                <span className="truncate text-[0.75rem] text-fg3 max-sm:text-[0.8125rem]">{f.nota}</span>
+                {ancho ? <Pista f={f} g={g} w={w} /> : null}
+              </>
+            )
+            const cls = 'flex flex-col gap-0.5 border-t border-line py-2'
+            const title = [f.titulo, f.nota].filter(Boolean).join('\n')
+            return isLink(f.link) ? (
+              <a key={f.id || i} href={f.link} target="_blank" rel="noreferrer" title={title} className={clsx(cls, 'press -mx-2 rounded-row px-2 hover:bg-hover')}>{body}</a>
+            ) : (
+              <div key={f.id || i} title={title} className={cls}>{body}</div>
+            )
+          })}
+        </section>
+      ))}
+      <div className="mt-1 grid gap-2">
         {tarjeta(produccion.titulo, produccion.items, produccion.titulo === 'Listo hoy' ? 'Nada terminado hoy todavía.' : '—')}
         {tarjeta('Riesgos', riesgos, 'Sin riesgos a la vista: nada bloqueado, en riesgo ni atrasado.')}
       </div>
+      <Leyenda />
       <h4 className="pt-4 pb-2 text-[0.9375rem] font-semibold">Decisiones que esperan por ti</h4>
       <div className="-mx-2"><Decisiones p={p} mias={mias} setMias={setMias} /></div>
     </div>

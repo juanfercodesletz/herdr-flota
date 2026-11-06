@@ -329,13 +329,14 @@ export default class Iniciativas extends View {
           // Del color del equipo si lo tiene (si no, del estado); la espera a Juan, del suyo. Lo estimado: punteado y claro.
           const c = b.tono ? color[b.tono] : EQUIPO[f.equipo] || color[tonoChip(f)];
           const el = div().absolute().left(`${b.x}%`).w(`${b.w}%`).top(0).h(18).rounded(4).flex().items_center().overflow_hidden();
-          const texto = div().px(5).text_size(10.5).font_medium().whitespace_nowrap().text_color(b.estimada ? t.foreground : t.background).child(b.dentro ? b.texto : "");
+          // Tenue o clara, la opacidad va en el fondo y no en el texto, que se lee entero.
+          const texto = div().px(5).text_size(10.5).font_medium().whitespace_nowrap().text_color(b.estimada || b.hecha ? t.foreground : t.background).child(b.dentro ? b.texto : "");
           return b.estimada ? el.border_1().border_dashed().border_color(c).child(div().absolute().inset_0().bg(c).opacity(0.28)).child(texto)
-            : el.bg(c).opacity(b.hecha ? 0.45 : 0.92).child(texto);
+            : b.hecha ? el.child(div().absolute().inset_0().bg(c).opacity(0.4)).child(texto) : el.bg(c).opacity(0.92).child(texto);
         }))
         .when(Boolean(fuera), (e) => e.child(div().absolute().top(0).h(18).flex().items_center().w(`${fuera.w}%`)
           .when(fuera.ancla === "izq", (x) => x.left(`${fuera.x}%`)).when(fuera.ancla === "der", (x) => x.right(`${100 - fuera.x}%`).justify_end())
-          .child(div().min_w(0).truncate().text_size(10.5).text_color(t.muted).child(fuera.texto))));
+          .child(div().min_w(0).truncate().px(2).bg(t.background).text_size(10.5).text_color(t.muted).child(fuera.texto))));
       return rayas(div().relative().min_w(0).when(ancho, (e) => e.flex_1().self_stretch().min_h(44)).when(!ancho, (e) => e.h(24).mt(4)))
         .child(div().absolute().inset_0().flex().items_center().child(linea));
     };
