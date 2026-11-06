@@ -57,4 +57,10 @@ v.entradas["veta.json#D7"].set_value("mejor el lunes");
 leerDe(producto({ D7: { respuesta: "Mañana", texto: "otra cosa" } }));
 assert.equal(v.entradas["veta.json#D7"].value(), "mejor el lunes");
 assert.deepEqual(await clic(`enviar-veta.json-${D7}`, producto()), ["guardar", "veta.json", "D7", "Mañana", "app", "mejor el lunes"]);
+// Ya guardado desde la app, lo que llegue después desde el teléfono también se pone en el campo (ronda 3 de codex):
+// elegir otra opción en la app lo conserva, no vuelve a mandar lo de la app.
+leerDe(producto({ D7: { respuesta: "Mañana", texto: "mejor el lunes" } }));
+leerDe(producto({ D7: { respuesta: "Mañana", texto: "desde el teléfono" } }));
+assert.equal(v.entradas["veta.json#D7"].value(), "desde el teléfono");
+assert.deepEqual(await clic(op(0), producto()), ["guardar", "veta.json", "D7", "Hoy", "app", "desde el teléfono"]);
 console.log("ok");

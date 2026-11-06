@@ -28,7 +28,8 @@ interface Decision {
 }
 type Producto = { archivo: string; at: number; error?: string; aviso?: string; producto: string; espacios?: string[]; epicas: Epica[]; sueltas: Tarea[]; decisiones?: Decision[] }
 /** lo que Juan tocó en esta página, por "<archivo>#<id>", hasta que la foto del escritorio lo traiga */
-type Mias = Record<string, { respuesta: string; texto: string; error?: string; guardando?: boolean }>
+/** at: cuándo lo guardó respuestas.py (reloj del Mac); una foto leída después ya lo trae y manda ella */
+type Mias = Record<string, { respuesta: string; texto: string; at?: number; error?: string; guardando?: boolean }>
 /** total: cuántos productos hay en todos los espacios (los de `productos` son los del espacio abierto); medidas: las horas
  * de las tareas de herdr-task, para el Gantt */
 interface Foto { at: number; productos: Producto[]; total?: number; medidas?: unknown[] }
@@ -293,7 +294,7 @@ function conMia(p: Producto, d: Decision, mias: Mias): Decision {
 }
 const abiertasDe = (p: Producto, mias: Mias) => (p.error ? 0 : (p.decisiones ?? []).filter((d) => conMia(p, d, mias).estado === 'abierta').length)
 
-/** guarda una opción, un texto libre o los dos (respuestas.py, por POST /flota/respuesta) */
+/** guarda una opción, un texto libre o los dos (respuestas.py, por POST /flota/respuesta); true si se guardó */
 async function responder(archivo: string, id: string, respuesta: string, texto: string, setMias: (f: (m: Mias) => Mias) => void) {
   const key = `${archivo}#${id}`
   texto = texto.trim()
@@ -301,16 +302,34 @@ async function responder(archivo: string, id: string, respuesta: string, texto: 
   try {
     const r = await fetch('/flota/respuesta', { method: 'POST', headers: { 'content-type': 'application/json', 'x-flota': '1' }, body: JSON.stringify({ archivo, id, respuesta, texto }) })
     const b = await r.json().catch(() => ({}))
-    setMias((m) => ({ ...m, [key]: r.ok ? { respuesta, texto } : { respuesta, texto, error: b.error || `no se guardó (${r.status})` } }))
+    setMias((m) => ({ ...m, [key]: r.ok ? { respuesta, texto, at: typeof b.at === 'number' ? b.at : Date.now() / 1000 } : { respuesta, texto, error: b.error || `no se guardó (${r.status})` } }))
+    return r.ok
   } catch {
     setMias((m) => ({ ...m, [key]: { respuesta, texto, error: 'no se guardó: /flota no responde en este Mac' } }))
+    return false
   }
+}
+
+/** lo respondido aquí tapa la foto solo hasta que llega una leída después de guardarlo (que ya lo trae, y quizá lo que
+ * se respondió después en el escritorio): entonces manda la foto */
+function useMiasVigentes(foto: Foto | null | 'error', setMias: (f: (m: Mias) => Mias) => void) {
+  const at = foto && foto !== 'error' ? foto.at : 0
+  useEffect(() => {
+    if (at) setMias((m) => {
+      const quedan = Object.entries(m).filter(([, x]) => x.guardando || x.error || !(x.at && x.at < at))
+      return quedan.length === Object.keys(m).length ? m : Object.fromEntries(quedan)
+    })
+  }, [at, setMias])
 }
 
 /** las decisiones de un producto: abiertas primero (borde rojo si frenan algo); tocar una opción la guarda, y debajo se
  * puede escribir con sus palabras (solo o junto a la opción). Se cambia mientras el TPM no la cierre */
 function Decisiones({ p, mias, setMias }: { p: Producto; mias: Mias; setMias: (f: (m: Mias) => Mias) => void }) {
   const [borrador, setBorrador] = useState<Record<string, string>>({})
+  // guardado, el borrador se suelta: el campo muestra lo guardado, y lo que llegue después desde el escritorio
+  const guardar = (id: string, respuesta: string, texto: string) => responder(p.archivo, id, respuesta, texto, setMias).then((ok) => {
+    if (ok) setBorrador((b) => Object.fromEntries(Object.entries(b).filter(([k]) => k !== id)))
+  })
   const decs = (p.decisiones ?? []).map((d) => conMia(p, d, mias))
   if (!decs.length) return <p className="px-2 py-1 text-[0.875rem] text-fg3">Sin decisiones abiertas.</p>
   return (
@@ -339,7 +358,7 @@ function Decisiones({ p, mias, setMias }: { p: Producto; mias: Mias; setMias: (f
                       type="button"
                       aria-pressed={on}
                       disabled={m?.guardando}
-                      onClick={() => !on && responder(p.archivo, d.id, o, borrador[d.id] ?? d.texto, setMias)}
+                      onClick={() => !on && guardar(d.id, o, borrador[d.id] ?? d.texto)}
                       className={clsx('press min-h-11 rounded-lg border px-3.5 text-[0.9375rem] disabled:opacity-60', on ? 'border-fg bg-fg text-bg' : 'border-line2 text-fg hover:bg-hover')}
                     >
                       {o}{o === d.recomendada ? ' ★' : ''}
@@ -365,7 +384,7 @@ function Decisiones({ p, mias, setMias }: { p: Producto; mias: Mias; setMias: (f
                   type="button"
                   // sin texto vale si queda una opción: así se quita un matiz
                   disabled={m?.guardando || (!(borrador[d.id] ?? d.texto).trim() && !d.respuesta)}
-                  onClick={() => responder(p.archivo, d.id, d.respuesta, borrador[d.id] ?? d.texto, setMias)}
+                  onClick={() => guardar(d.id, d.respuesta, borrador[d.id] ?? d.texto)}
                   className="press min-h-11 self-start rounded-lg bg-fg px-4 text-[0.9375rem] text-bg disabled:opacity-40"
                 >
                   {d.estado === 'respondida' ? 'Cambiar respuesta' : 'Enviar'}
@@ -486,6 +505,7 @@ function Abridor() {
   const [open, setOpen] = useState(false)
   const [mias, setMias] = useState<Mias>({})
   const foto = useDelEspacio(useFoto())
+  useMiasVigentes(foto, setMias)
   const pendientes = foto && foto !== 'error' ? foto.productos.reduce((n, p) => n + abiertasDe(p, mias), 0) : 0
   // un punto rojo si hay tareas bloqueadas
   const bloqueadas = foto && foto !== 'error' && foto.productos.some((p) => !p.error && [...p.epicas.flatMap((e) => e.tareas), ...p.sueltas].some((t) => tono(t.estado) === 'bloqueada'))

@@ -288,6 +288,8 @@ export default class Iniciativas extends View {
     cx.spawn(async (cx) => {
       const r = await exec("python3", [`${appHome()}/mods/flota-iniciativas/respuestas.py`, "guardar", archivo, id, respuesta, "app", texto]).catch((e) => ({ code: 1, stderr: String(e) }));
       this.aviso = r.code ? (r.stderr || "No se guardó la respuesta").trim().split("\n").pop() : "";
+      // Guardado: el campo queda al día con lo que guardó, así la siguiente lectura (quizá con texto del teléfono) lo iguala.
+      if (!r.code && this.leidos) this.leidos[`${archivo}#${id}`] = texto;
       await this.leerTodo(cx);
     });
   }
