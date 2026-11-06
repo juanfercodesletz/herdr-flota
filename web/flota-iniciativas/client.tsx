@@ -180,10 +180,11 @@ function Pista({ f, g }: { f: Fila; g: G }) {
         <span
           key={i}
           title={b.texto}
-          className={clsx('absolute inset-y-0 flex items-center overflow-hidden rounded-[4px] px-1 text-[0.625rem] font-medium whitespace-nowrap text-bg', b.tono ? DOT[b.tono] : EQUIPO_BG[f.equipo] || DOT[tonoChip(f)], b.hecha ? 'opacity-45' : b.estimada ? 'opacity-75' : 'opacity-90')}
+          className={clsx('absolute inset-y-0 flex items-center overflow-hidden rounded-[4px] text-[0.625rem] font-medium whitespace-nowrap text-bg', b.tono ? DOT[b.tono] : EQUIPO_BG[f.equipo] || DOT[tonoChip(f)], b.hecha ? 'opacity-45' : b.estimada ? 'opacity-75' : 'opacity-90')}
           style={{ left: `${b.x}%`, width: `${b.w}%`, ...(b.estimada ? RAYAS : {}) }}
         >
-          {b.texto}
+          {/* el relleno va en el texto: la barra mide sus horas aunque sea de un minuto */}
+          <span className="px-1">{b.texto}</span>
         </span>
       ))}
       {g.ya != null ? <span className="absolute -inset-y-1 w-0.5 bg-orange-500" style={{ left: P(g.ya) }} /> : null}
@@ -362,7 +363,8 @@ function Decisiones({ p, mias, setMias }: { p: Producto; mias: Mias; setMias: (f
                 />
                 <button
                   type="button"
-                  disabled={m?.guardando || !(borrador[d.id] ?? d.texto).trim()}
+                  // sin texto vale si queda una opción: así se quita un matiz
+                  disabled={m?.guardando || (!(borrador[d.id] ?? d.texto).trim() && !d.respuesta)}
                   onClick={() => responder(p.archivo, d.id, d.respuesta, borrador[d.id] ?? d.texto, setMias)}
                   className="press min-h-11 self-start rounded-lg bg-fg px-4 text-[0.9375rem] text-bg disabled:opacity-40"
                 >

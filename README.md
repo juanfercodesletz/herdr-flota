@@ -263,8 +263,9 @@ Por qué no por las tarjetas «Needs you» de Shepherdr: esas son la pregunta de
 (`AskUserQuestion`, un permiso), y la respuesta vuelve a ese agente. Estas decisiones no paran a nadie y las lleva el TPM.
 Si quien pregunta es una tarea de Shepherdr que ya está en «Needs you», se responde ahí y el TPM no la copia.
 
-Pruebas: `node shell/prueba-iniciativas.mjs` (lector) y `zsh shell/prueba-decisiones.zsh` (guardar y servidor, en un
-HOME temporal).
+Pruebas: `node shell/prueba-iniciativas.mjs` (lector), `zsh shell/prueba-decisiones.zsh` (guardar y servidor, en un
+HOME temporal) y `node shell/prueba-gantt-app.mjs` (el Gantt del panel del escritorio y sus decisiones, con herdr y gpui
+de mentira).
 
 ## Perfil de Claude de cada chat
 

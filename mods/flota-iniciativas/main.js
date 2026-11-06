@@ -81,16 +81,22 @@ export default class Iniciativas extends View {
   }
 
   // Un campo de texto por decisión, para responder con sus palabras: gpui pide crearlo fuera de render, así que se crea
-  // al leer y se guarda por "<archivo>#<id>". Enter o Enviar lo guardan con la opción que ya tenga.
+  // al leer y se guarda por "<archivo>#<id>". Enter o Enviar lo guardan con la opción que ya tenga. En cada lectura, un
+  // campo que Juan no tocó toma el texto guardado (quizá desde el teléfono); uno que está escribiendo, no se pisa.
   entradasDe(productos) {
     this.entradas ??= {};
+    this.leidos ??= {}; // el último texto guardado que se puso en cada campo
     for (const p of productos) for (const d of p.error ? [] : p.decisiones) {
-      const k = `${p.archivo}#${d.id}`;
-      if (this.entradas[k] || d.estado === "cerrada") continue;
+      const k = `${p.archivo}#${d.id}`, st = this.entradas[k];
+      if (st) {
+        if (st.value() === this.leidos[k] && d.texto !== this.leidos[k]) { st.set_value(d.texto); this.leidos[k] = d.texto; }
+        continue;
+      }
+      if (d.estado === "cerrada") continue;
       try {
-        const st = InputState.new({ placeholder: "Escribe tu respuesta o un matiz", value: d.texto });
-        st.on("submit", (_e, cx) => this.enviar(p.archivo, d.id, cx));
-        this.entradas[k] = st;
+        const nuevo = InputState.new({ placeholder: "Escribe tu respuesta o un matiz", value: d.texto });
+        nuevo.on("submit", (_e, cx) => this.enviar(p.archivo, d.id, cx));
+        this.entradas[k] = nuevo; this.leidos[k] = d.texto;
       } catch { /* sin campo, quedan las opciones */ }
     }
   }
@@ -304,8 +310,9 @@ export default class Iniciativas extends View {
       .children(f.barras.map((b) => {
         // Del color del equipo si lo tiene (si no, del estado); la espera a Juan, del suyo. Lo estimado: punteado y claro.
         const c = b.tono ? color[b.tono] : EQUIPO[f.equipo] || color[tonoChip(f)];
-        const el = div().absolute().left(`${b.x}%`).w(`${b.w}%`).top(ancho ? 16 : 1).h(18).rounded(4).px(5).flex().items_center().overflow_hidden();
-        const texto = div().text_size(10.5).font_medium().truncate().text_color(b.estimada ? t.foreground : t.background).child(b.texto);
+        // Sin relleno en la barra misma: su ancho es el de sus horas aunque sea de un minuto; el relleno va en el texto.
+        const el = div().absolute().left(`${b.x}%`).w(`${b.w}%`).top(ancho ? 16 : 1).h(18).rounded(4).flex().items_center().overflow_hidden();
+        const texto = div().px(5).text_size(10.5).font_medium().truncate().text_color(b.estimada ? t.foreground : t.background).child(b.texto);
         return b.estimada ? el.border_1().border_dashed().border_color(c).child(div().absolute().inset_0().bg(c).opacity(0.28)).child(texto)
           : el.bg(c).opacity(b.hecha ? 0.45 : 0.92).child(texto);
       }))
