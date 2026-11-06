@@ -11,14 +11,15 @@
 import { View, div, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { exec, home, appHome, theme, layout, run, props, spaces } from "herdr";
-import { leer, avance, esperan, ordenar, tono, hace, SIN_ARCHIVO, tablero, gantt, chip, tonoChip, pos, ahora, SALIDAS, SIN_PLAN, abiertas, cuantas, delEspacio, esHome, SIN_INICIATIVAS } from "./iniciativas.js";
+import { leer, avance, esperan, ordenar, tono, hace, SIN_ARCHIVO, tablero, gantt, pie, hhmm, chip, tonoChip, pos, ahora, SALIDAS, SIN_PLAN, abiertas, cuantas, delEspacio, esHome, SIN_INICIATIVAS } from "./iniciativas.js";
 
 const VISTAS = [["iniciativas", "Iniciativas"], ["tablero", "Tablero"], ["gantt", "Gantt"], ["decisiones", "Decisiones"]];
 
-// Cada <producto>.json de ~/.herdr/flota con su hora y sus respuestas dadas en Herdr, en una sola llamada.
-// presupuesto.json es de Entorno.
+// Cada <producto>.json de ~/.herdr/flota con su hora y sus respuestas dadas en Herdr, y las horas de las tareas de
+// herdr-task (~/.herdr/tasks/*.json) que el Gantt pinta: las que corren, esperan o se movieron en los dos últimos días.
+// Todo en una sola llamada. presupuesto.json es de Entorno.
 const LISTAR = `
-import glob, json, os
+import glob, json, os, time
 out = []
 for f in sorted(glob.glob(os.path.expanduser("~/.herdr/flota/*.json"))):
     n = os.path.basename(f)
@@ -28,7 +29,26 @@ for f in sorted(glob.glob(os.path.expanduser("~/.herdr/flota/*.json"))):
     try: r = open(os.path.join(os.path.dirname(f), "respuestas", n), encoding="utf-8").read()
     except Exception: r = None
     out.append({"archivo": n, "at": int(os.path.getmtime(f)), "texto": t, "respuestas": r})
-print(json.dumps(out))
+med, viejo = [], (time.time() - 2 * 86400) * 1000
+for f in glob.glob(os.path.expanduser("~/.herdr/tasks/*.json")):
+    try: d = json.load(open(f, encoding="utf-8"))
+    except Exception: continue
+    if not isinstance(d, dict) or not isinstance(d.get("tasks"), list): continue
+    for t in d["tasks"]:
+        if not isinstance(t, dict) or not isinstance(t.get("started"), (int, float)): continue
+        ag = [a for a in t.get("agents") or [] if isinstance(a, dict)]
+        fin = max(a["ended"] for a in ag) if ag and all(isinstance(a.get("ended"), (int, float)) for a in ag) else None
+        vivo = t.get("state") in ("running", "ready") and not (t.get("state") == "running" and fin)
+        if not vivo and max(x for x in (t["started"], t.get("ready_at"), t.get("done_at"), fin) if isinstance(x, (int, float))) < viejo: continue
+        argv = (ag[-1].get("argv") or []) if ag else []
+        modelo = argv[argv.index("--model") + 1] if "--model" in argv[:-1] else ""
+        p = t.get("progress") if isinstance(t.get("progress"), dict) else None
+        med.append({"ref": f"{d['prefix']}-{t.get('id')}" if d.get("prefix") else "", "titulo": t.get("title") or "", "estado": t.get("state"),
+            "space": t.get("space"), "asiento": " ".join(x for x in (ag[-1].get("agent") if ag else "", modelo) if x),
+            "agentes": [a["address"] for a in ag if a.get("address")], "started": t["started"], "ready_at": t.get("ready_at"),
+            "done_at": t.get("done_at"), "fin": fin, "pr": (t.get("pr") or {}).get("url") or "",
+            "progreso": {"texto": p.get("text") or "", "at": p.get("at"), "left": p.get("left")} if p else None})
+print(json.dumps({"archivos": out, "medidas": med}))
 `;
 
 export default class Iniciativas extends View {
@@ -48,11 +68,13 @@ export default class Iniciativas extends View {
 
   async leerTodo(cx) {
     try {
-      const files = JSON.parse((await exec("python3", ["-c", LISTAR])).stdout || "[]");
-      this.productos = ordenar(files.map((f) => ({ ...leer(f.archivo, f.texto, f.respuestas), at: f.at })));
-    } catch { this.productos = [{ archivo: "", error: "No se pudo leer ~/.herdr/flota" }]; }
+      const { archivos, medidas } = JSON.parse((await exec("python3", ["-c", LISTAR])).stdout || "{}");
+      this.productos = ordenar(archivos.map((f) => ({ ...leer(f.archivo, f.texto, f.respuestas), at: f.at })));
+      this.medidas = medidas;
+    } catch { this.productos = [{ archivo: "", error: "No se pudo leer ~/.herdr/flota" }]; this.medidas = []; }
+    this.leido = Math.floor(Date.now() / 1000);
     // La web de Shepherdr dibuja lo mismo desde esta foto (web/flota-iniciativas, servida en /flota).
-    const foto = JSON.stringify({ at: Math.floor(Date.now() / 1000), productos: this.productos });
+    const foto = JSON.stringify({ at: this.leido, productos: this.productos, medidas: this.medidas });
     exec("sh", ["-c", 'mkdir -p "${1%/*}" && printf %s "$2" > "$1.$$" && mv "$1.$$" "$1"', "sh", home() + "/.herdr/flota/web/iniciativas.json", foto]).catch(() => {});
     cx.notify();
   }
@@ -131,6 +153,7 @@ export default class Iniciativas extends View {
           .children(lista))
         .child(div().pt(8).text_size(10.5).text_color(t.dim).child(this.vista === "decisiones"
           ? "Las mismas decisiones del Gantt: respóndelas aquí o desde el celular · ★ recomendada"
+          : this.vista === "gantt" ? "Barras: de cuando arrancó su agente a cuando quedó lista (herdr-task) · punteada = estimada · tenue = terminada"
           : "Épicas y tareas de ClickUp · el TPM las iguala en cada tick")));
 
     if (!sel) return root;
@@ -236,42 +259,69 @@ export default class Iniciativas extends View {
     });
   }
 
-  // Gantt: un bloque por salida a producción. Con espacio, el nombre a la izquierda y la barra a la derecha; angosto,
-  // la barra va debajo del nombre a todo el ancho, así se lee sin desplazarse. Rayas: salidas de 07, 12 y 19;
-  // naranja: ahora (Bogotá). Las salidas van en línea fina (gpui no pinta bordes punteados verticales). Barra sólida = en marcha, contorno = estimada, tenue = ya hecha.
+  // Gantt (skill gantt-flota): un bloque por salida a producción («Hoy» si no hay). Con espacio, a la izquierda quién lo
+  // hace, el chip, el enlace, el nombre y la nota, y las barras a la derecha; angosto, las barras van debajo a todo el
+  // ancho, así se lee sin desplazarse. Rayas finas: salidas de 07, 12 y 19 (gpui no pinta bordes punteados verticales);
+  // naranja: ahora (Bogotá). Barra sólida = medida o escrita, contorno punteado = estimada, tenue = ya terminada.
+  // Al pie: decisiones que esperan (lleva a su pestaña), lo listo hoy o ya en producción, y los riesgos.
   gantt(p, t, color) {
-    const grupos = gantt(p);
-    if (!grupos.length) return [div().py(6).text_size(12).text_color(t.dim).child(SIN_PLAN)];
-    const ancho = this.ancho >= 620, ya = ahora(), NARANJA = "#f97316";
-    const EQUIPO = { AI: t.ansi6, Backend: t.ansi3, Frontend: t.ansi2, Acciones: t.ansi5, DevOps: t.ansi4 };
-    const pista = (f) => div().relative().h(ancho ? 40 : 14).when(ancho, (e) => e.flex_1()).min_w(0)
-      .children(SALIDAS.map((h) => div().absolute().left(`${pos(h)}%`).top(0).bottom(0).w(1).bg(t.border)))
-      .when(ya != null, (el) => el.child(div().absolute().left(`${pos(ya)}%`).top(0).bottom(0).w(2).bg(NARANJA)))
-      .when(Boolean(f?.barra), (el) => {
-        const c = color[tonoChip(f)], b = div().absolute().left(`${f.barra.x}%`).w(`${f.barra.w}%`).top(ancho ? 15 : 2).h(10).rounded(3);
-        return el.child(f.estimada && !f.hecha ? b.border_1().border_dashed().border_color(c) : b.bg(c).opacity(f.hecha ? 0.45 : 0.9));
-      });
-    const eje = h_flex().h(16).when(ancho, (e) => e.child(div().w(300).flex_none()))
-      .child(div().relative().flex_1().h_full().children([7, 10, 12, 15, 19].map((h) =>
-        div().absolute().left(`${pos(h)}%`).ml(-15).w(30).text_size(10).text_color(SALIDAS.includes(h) ? t.muted : t.dim).child(`${String(h).padStart(2, "0")}:00`))));
-    const nombre = (f) => h_flex().gap(8).items_center().min_w(0)
-      .child(div().flex_none().px(6).rounded(8).border_1().border_color(color[tonoChip(f)]).text_size(10.5).text_color(color[tonoChip(f)]).child(chip(f)))
-      .child(div().flex_1().min_w(0).text_size(12.5).text_color(f.hecha ? t.muted : t.foreground).truncate().child(f.titulo));
-    const sub = (f) => h_flex().gap(6).min_w(0).text_size(11).text_color(t.dim)
-      .when(Boolean(f.equipo), (e) => e.child(div().flex_none().text_color(EQUIPO[f.equipo] || t.muted).child(f.equipo)))
-      .child(div().flex_1().min_w(0).truncate().child(f.nota || f.de));
-    const out = [eje];
-    grupos.forEach((g, i) => {
-      out.push(div().pt(8).pb(2).text_size(10.5).font_semibold().text_color(t.muted).child(g.titulo.toUpperCase()));
-      g.filas.forEach((f, j) => {
+    const g = gantt(p, this.medidas || []);
+    const revisado = div().pb(4).text_size(11).text_color(t.dim).child(`Revisado a las ${hhmm(ahora(this.leido, 0, 24) ?? 0)}`);
+    if (!g.grupos.length) return [revisado, div().py(6).text_size(12).text_color(t.dim).child(SIN_PLAN), ...this.pie(p, g, t)];
+    const ancho = this.ancho >= 620, NARANJA = "#f97316", P = (h) => `${pos(h, g.h0, g.h1)}%`;
+    const EQUIPO = { AI: t.ansi6, Backend: t.ansi3, Frontend: t.ansi2, Acciones: t.ansi5, DevOps: t.ansi4, TPM: t.muted };
+    const IZQ = 320;
+    const pista = (f) => div().relative().h(ancho ? 52 : 20).when(ancho, (e) => e.flex_1()).min_w(0)
+      .children(g.marcas.map((h) => div().absolute().left(P(h)).top(0).bottom(0).w(1).bg(t.border).opacity(0.5)))
+      .children(SALIDAS.filter((h) => h > g.h0 && h < g.h1).map((h) => div().absolute().left(P(h)).top(0).bottom(0).w(1).bg(t.muted).opacity(0.6)))
+      .children(f.barras.map((b) => {
+        const c = color[b.tono || tonoChip(f)];
+        const el = div().absolute().left(`${b.x}%`).w(`${b.w}%`).top(ancho ? 16 : 1).h(18).rounded(4).px(5).flex().items_center().overflow_hidden()
+          .child(div().text_size(10.5).font_medium().truncate().text_color(b.estimada ? c : t.background).child(b.texto));
+        return b.estimada ? el.border_1().border_dashed().border_color(c).bg(t.hover) : el.bg(c).opacity(b.hecha ? 0.45 : 0.92);
+      }))
+      .when(g.ya != null, (el) => el.child(div().absolute().left(P(g.ya)).top(0).bottom(0).w(2).bg(NARANJA)));
+    const eje = h_flex().h(18).when(ancho, (e) => e.child(div().w(IZQ).flex_none()))
+      .child(div().relative().flex_1().h_full()
+        .children(g.marcas.map((h) => div().absolute().left(P(h)).ml(-15).w(30).text_size(10).text_color(SALIDAS.includes(h) ? t.muted : t.dim).child(`${String(h % 24).padStart(2, "0")}:00`)))
+        .when(g.ya != null, (el) => el.child(div().absolute().left(P(g.ya)).ml(4).text_size(10).font_semibold().text_color(NARANJA).bg(t.background).child(`ahora ${hhmm(g.ya)}`))));
+    const quien = (f) => h_flex().gap(6).items_center().min_w(0)
+      .when(Boolean(f.quien), (e) => e.child(div().flex_none().text_size(10).font_semibold().text_color(EQUIPO[f.quien] || t.muted).child(f.quien.toUpperCase())))
+      .child(div().flex_none().px(6).rounded(8).bg(color[tonoChip(f)]).text_size(10.5).text_color(t.background).child(chip(f)))
+      .child(div().flex_none().text_size(10.5).text_color(f.link ? t.accent : t.dim).child(f.enlace || "sin enlace"));
+    const nombre = (f) => div().text_size(12.5).font_medium().text_color(f.hecha ? t.muted : t.foreground).truncate().child(f.titulo);
+    const nota = (f) => div().text_size(11).text_color(t.dim).truncate().child(f.nota);
+    const out = [revisado, eje];
+    g.grupos.forEach((x, i) => {
+      out.push(div().pt(10).pb(3).text_size(10.5).font_semibold().text_color(t.muted).child(x.titulo.toUpperCase()));
+      x.filas.forEach((f, j) => {
         const fila = (ancho
-          ? h_flex().h(44).items_center().child(v_flex().w(300).flex_none().pr(12).gap(1).child(nombre(f)).child(sub(f))).child(pista(f))
-          : v_flex().py(6).gap(3).child(nombre(f)).child(sub(f)).child(pista(f)))
+          ? h_flex().min_h(52).items_center().child(v_flex().w(IZQ).flex_none().pr(12).py(4).gap(1).child(quien(f)).child(nombre(f)).child(nota(f))).child(pista(f))
+          : v_flex().py(6).gap(2).child(quien(f)).child(nombre(f)).child(nota(f)).child(div().pt(3).child(pista(f))))
           .id(`fila-${p.archivo}-${i}-${j}`).border_t(1).border_color(t.border).cursor_pointer().hover((s) => s.bg(t.hover));
         out.push(/^https?:\/\//.test(f.link) ? fila.on_click((_e, cx) => cx.open_url(f.link)) : fila);
       });
     });
-    return out;
+    return [...out, ...this.pie(p, g, t)];
+  }
+
+  // El pie del Gantt, como el del artefacto: las decisiones que te esperan (un clic abre su pestaña) y dos tarjetas.
+  pie(p, g, t) {
+    const { produccion, riesgos, decisiones } = pie(p, g);
+    const tarjeta = (titulo, items, vacio) => v_flex().flex_1().min_w(0).p(12).gap(6).rounded(9).border_1().border_color(t.border)
+      .child(div().text_size(12.5).font_semibold().child(titulo))
+      .children(items.length ? items.map((x) => h_flex().gap(6).items_start().text_size(11.5).text_color(t.foreground)
+        .child(div().flex_none().text_color(t.dim).child("•")).child(div().flex_1().min_w(0).child(x)))
+        : [div().text_size(11.5).text_color(t.dim).child(vacio)]);
+    const tarjetas = [tarjeta(produccion.titulo, produccion.items, produccion.titulo === "Listo hoy" ? "Nada terminado hoy todavía." : "—"),
+      tarjeta("Riesgos", riesgos, "Sin riesgos a la vista: nada bloqueado, en riesgo ni atrasado.")];
+    return [
+      div().id(`decisiones-${p.archivo}`).mt(12).h(32).px(12).flex().items_center().rounded(8).border_1()
+        .border_color(decisiones ? t.blocked : t.border).text_size(12.5).text_color(decisiones ? t.blocked : t.muted)
+        .cursor_pointer().hover((s) => s.bg(t.hover)).on_click((_e, cx) => { this.vista = "decisiones"; cx.notify(); })
+        .child(decisiones ? `${decisiones === 1 ? "1 decisión te espera" : `${decisiones} decisiones te esperan`} · ver Decisiones →` : "Ninguna decisión te espera · ver Decisiones →"),
+      (this.ancho >= 620 ? h_flex().items_start() : v_flex()).mt(8).mb(6).gap(8).children(tarjetas),
+    ];
   }
 }
 

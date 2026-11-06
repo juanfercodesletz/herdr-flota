@@ -11,13 +11,16 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { definePlugin, placeOf, useSnap, useUI } from '@client/kernel.ts'
 import { Tab, Tabs } from '@client/ui.tsx'
-import { ahora, avance, chip, cuantas, esperan, gantt, hace, pos, SALIDAS, SIN_ARCHIVO, SIN_INICIATIVAS, SIN_PLAN, delEspacio, esHome, tablero, tono, tonoChip } from './iniciativas.js'
+import { ahora, avance, chip, cuantas, esperan, gantt, hace, hhmm, pie, pos, SALIDAS, SIN_ARCHIVO, SIN_INICIATIVAS, SIN_PLAN, delEspacio, esHome, tablero, tono, tonoChip } from './iniciativas.js'
 
 interface Tarea {
   id: string; titulo: string; estado: string; link: string; sesion: string
   salida: string; desde: string; hasta: string; estimada: boolean; ritmo: string; nota: string; equipo: string
 }
-type Fila = Tarea & { de: string; barra: { x: number; w: number } | null; hecha: boolean }
+interface Tramo { x: number; w: number; texto: string; estimada: boolean; hecha: boolean; tono: string }
+type Fila = Tarea & { de: string; barras: Tramo[]; hecha: boolean; espera: boolean; quien: string; enlace: string }
+/** lo que devuelve gantt(): el eje en horas, la hora actual y los bloques */
+interface G { h0: number; h1: number; ya: number | null; marcas: number[]; grupos: { salida: string; titulo: string; filas: Fila[] }[] }
 interface Epica { id: string; titulo: string; estado: string; link: string; tareas: Tarea[] }
 interface Decision {
   id: string; pregunta: string; opciones: string[]; recomendada: string; contexto: string; de: string; tarea: string
@@ -26,13 +29,13 @@ interface Decision {
 type Producto = { archivo: string; at: number; error?: string; aviso?: string; producto: string; espacios?: string[]; epicas: Epica[]; sueltas: Tarea[]; decisiones?: Decision[] }
 /** lo que Juan tocó en esta página, por "<archivo>#<id>", hasta que la foto del escritorio lo traiga */
 type Mias = Record<string, { respuesta: string; error?: string; guardando?: boolean }>
-/** total: cuántos productos hay en todos los espacios (los de `productos` son los del espacio abierto) */
-interface Foto { at: number; productos: Producto[]; total?: number }
+/** total: cuántos productos hay en todos los espacios (los de `productos` son los del espacio abierto); medidas: las horas
+ * de las tareas de herdr-task, para el Gantt */
+interface Foto { at: number; productos: Producto[]; total?: number; medidas?: unknown[] }
 
 // Los tonos del escritorio: verde lo mergeado, azul con PR, rojo lo bloqueado, gris lo demás.
 const DOT: Record<string, string> = { hecha: 'bg-ready', pr: 'bg-focus', bloqueada: 'bg-need', curso: 'bg-fg2', cola: 'bg-line2', riesgo: 'bg-work', espera: 'bg-merged' }
 // El chip y el contorno de la barra del Gantt, en el mismo tono.
-const LINEA: Record<string, string> = { hecha: 'border-ready text-ready-fg', pr: 'border-focus text-focus', bloqueada: 'border-need text-need-fg', curso: 'border-fg3 text-fg2', cola: 'border-line2 text-fg3', riesgo: 'border-work text-work-fg', espera: 'border-merged text-merged' }
 const EQUIPO: Record<string, string> = { AI: 'text-focus', Backend: 'text-work-fg', Frontend: 'text-ready-fg', Acciones: 'text-merged', DevOps: 'text-fg2' }
 const VISTAS = [['iniciativas', 'Iniciativas'], ['tablero', 'Tablero'], ['gantt', 'Gantt'], ['decisiones', 'Decisiones']] as const
 type Vista = (typeof VISTAS)[number][0]
@@ -160,64 +163,93 @@ function Tablero({ p }: { p: Producto }) {
   )
 }
 
-/** la pista de una fila: rayas en las salidas de 07, 12 y 19, la hora actual en naranja y la barra
- * (sólida en marcha, contorno si es estimada, tenue si ya está hecha) */
-function Pista({ f, ya }: { f: Fila; ya: number | null }) {
-  const t = tonoChip(f)
+// Rayada: lo estimado, como en el artefacto del Gantt.
+const RAYAS = { backgroundImage: 'repeating-linear-gradient(45deg, rgba(255,255,255,.3) 0 4px, transparent 4px 8px)' }
+
+/** la pista de una fila: rayas finas en las horas rotuladas, punteadas en las salidas de 07, 12 y 19, la hora actual
+ * en naranja y las barras con su texto (sólida = medida o escrita, rayada = estimada, tenue = ya terminada) */
+function Pista({ f, g }: { f: Fila; g: G }) {
+  const P = (h: number) => `${pos(h, g.h0, g.h1)}%`
   return (
-    <span className="relative block h-3">
-      {SALIDAS.map((h) => <span key={h} className="absolute inset-y-0 border-l border-dashed border-line2" style={{ left: `${pos(h)}%` }} />)}
-      {f.barra ? (
+    <span className="relative mt-1 block h-5">
+      {g.marcas.map((h) => <span key={h} className="absolute inset-y-0 border-l border-line" style={{ left: P(h) }} />)}
+      {SALIDAS.filter((h) => h > g.h0 && h < g.h1).map((h) => <span key={h} className="absolute inset-y-0 border-l border-dashed border-fg3" style={{ left: P(h) }} />)}
+      {f.barras.map((b, i) => (
         <span
-          className={clsx('absolute inset-y-0.5 rounded-[3px]', f.estimada && !f.hecha ? clsx('border border-dashed', LINEA[t]) : clsx(DOT[t], f.hecha ? 'opacity-45' : 'opacity-90'))}
-          style={{ left: `${f.barra.x}%`, width: `${f.barra.w}%` }}
-        />
-      ) : null}
-      {ya != null ? <span className="absolute inset-y-0 w-0.5 bg-orange-500" style={{ left: `${pos(ya)}%` }} /> : null}
+          key={i}
+          title={b.texto}
+          className={clsx('absolute inset-y-0 flex items-center overflow-hidden rounded-[4px] px-1 text-[0.625rem] font-medium whitespace-nowrap text-bg', DOT[b.tono || tonoChip(f)], b.hecha ? 'opacity-45' : b.estimada ? 'opacity-75' : 'opacity-90')}
+          style={{ left: `${b.x}%`, width: `${b.w}%`, ...(b.estimada ? RAYAS : {}) }}
+        >
+          {b.texto}
+        </span>
+      ))}
+      {g.ya != null ? <span className="absolute -inset-y-1 w-0.5 bg-orange-500" style={{ left: P(g.ya) }} /> : null}
     </span>
   )
 }
 
-/** el Gantt del día (skill gantt-flota): un bloque por salida; cada fila con su chip, su nombre, equipo y nota, y la
- * barra debajo a todo el ancho, así se lee a 390 px sin desplazarse */
-function Gantt({ p }: { p: Producto }) {
-  const grupos = gantt(p) as { salida: string; titulo: string; filas: Fila[] }[]
-  if (!grupos.length) return <p className="px-2 py-1 text-[0.875rem] text-fg3">{SIN_PLAN}</p>
-  const ya = ahora()
+/** el Gantt del día (skill gantt-flota): un bloque por salida («Hoy» sin salidas); cada fila con quién la hace, su chip,
+ * su enlace, su nombre y su nota, y las barras debajo a todo el ancho, así se lee a 390 px sin desplazarse. Al pie, las
+ * decisiones que esperan (llevan a su pestaña), lo listo hoy o ya en producción, y los riesgos */
+function Gantt({ p, medidas, at, decisiones, verDecisiones }: { p: Producto; medidas: unknown[]; at: number; decisiones: number; verDecisiones: () => void }) {
+  const g = gantt(p, medidas) as G
+  const { produccion, riesgos } = pie(p, g) as { produccion: { titulo: string; items: string[] }; riesgos: string[] }
+  const P = (h: number) => `${pos(h, g.h0, g.h1)}%`
+  const tarjeta = (titulo: string, items: string[], vacio: string) => (
+    <div className="rounded-lg border border-line px-3 py-2.5">
+      <h4 className="text-[0.875rem] font-semibold">{titulo}</h4>
+      {items.length ? (
+        <ul className="mt-1 list-disc space-y-1 pl-4 text-[0.8125rem] text-fg">{items.map((x, i) => <li key={i}>{x}</li>)}</ul>
+      ) : <p className="mt-1 text-[0.8125rem] text-fg3">{vacio}</p>}
+    </div>
+  )
   return (
     <div className="px-2">
-      <div className="relative h-4 text-[0.6875rem] text-fg3 tabular-nums" aria-hidden="true">
-        {[7, 10, 12, 15, 19].map((h) => (
-          <span key={h} className={clsx('absolute -translate-x-1/2', SALIDAS.includes(h) && 'text-fg2')} style={{ left: `${pos(h)}%` }}>{String(h).padStart(2, '0')}:00</span>
-        ))}
+      <p className="pb-1 text-[0.75rem] text-fg3">Revisado a las {hhmm(ahora(at, 0, 24) ?? 0)}</p>
+      {!g.grupos.length ? <p className="py-1 text-[0.875rem] text-fg3">{SIN_PLAN}</p> : (
+        <>
+          <div className="relative h-4 text-[0.6875rem] text-fg3 tabular-nums" aria-hidden="true">
+            {g.marcas.map((h) => (
+              <span key={h} className={clsx('absolute -translate-x-1/2', SALIDAS.includes(h) && 'text-fg2')} style={{ left: P(h) }}>{String(h % 24).padStart(2, '0')}</span>
+            ))}
+            {g.ya != null ? <span className="absolute z-10 bg-bg px-1 font-semibold whitespace-nowrap text-orange-500" style={{ left: P(g.ya), transform: g.ya > (g.h0 + g.h1) / 2 ? 'translateX(-100%)' : undefined }}>ahora {hhmm(g.ya)}</span> : null}
+          </div>
+          {g.grupos.map((x) => (
+            <section key={x.salida}>
+              <h4 className="pt-3 pb-1 text-[0.6875rem] font-semibold tracking-wide text-fg2 uppercase max-sm:text-[0.75rem]">{x.titulo}</h4>
+              {x.filas.map((f, i) => {
+                const body = (
+                  <>
+                    <span className="flex min-w-0 items-center gap-1.5 text-[0.6875rem]">
+                      {f.quien ? <span className={clsx('shrink-0 font-semibold tracking-wide uppercase', EQUIPO[f.quien] || 'text-fg3')}>{f.quien}</span> : null}
+                      <span className={clsx('shrink-0 rounded-full px-1.5 leading-4 text-bg', DOT[tonoChip(f)])}>{chip(f)}</span>
+                      <span className={clsx('shrink-0', f.link ? 'text-focus underline underline-offset-2' : 'text-fg3')}>{f.enlace || 'sin enlace'}</span>
+                    </span>
+                    <span className={clsx('truncate text-[0.875rem] font-medium max-sm:text-[0.9375rem]', f.hecha ? 'text-fg2' : 'text-fg')}>{f.titulo}</span>
+                    <span className="truncate text-[0.75rem] text-fg3 max-sm:text-[0.8125rem]">{f.nota}</span>
+                    <Pista f={f} g={g} />
+                  </>
+                )
+                const cls = 'flex flex-col gap-0.5 border-t border-line py-2'
+                return isLink(f.link) ? (
+                  <a key={f.id || i} href={f.link} target="_blank" rel="noreferrer" className={clsx(cls, 'press -mx-2 rounded-row px-2 hover:bg-hover')}>{body}</a>
+                ) : (
+                  <div key={f.id || i} className={cls}>{body}</div>
+                )
+              })}
+            </section>
+          ))}
+          <p className="pt-2 text-[0.75rem] text-fg3">Barras: de cuando arrancó su agente a cuando quedó lista · rayada = estimada · tenue = terminada · naranja = ahora</p>
+        </>
+      )}
+      <button type="button" onClick={verDecisiones} className={clsx('press mt-3 flex min-h-10 w-full items-center rounded-lg border px-3 text-left text-[0.875rem] hover:bg-hover', decisiones ? 'border-need text-need-fg' : 'border-line text-fg2')}>
+        {decisiones ? `${decisiones === 1 ? '1 decisión te espera' : `${decisiones} decisiones te esperan`}` : 'Ninguna decisión te espera'} · ver Decisiones →
+      </button>
+      <div className="mt-2 grid gap-2">
+        {tarjeta(produccion.titulo, produccion.items, produccion.titulo === 'Listo hoy' ? 'Nada terminado hoy todavía.' : '—')}
+        {tarjeta('Riesgos', riesgos, 'Sin riesgos a la vista: nada bloqueado, en riesgo ni atrasado.')}
       </div>
-      {grupos.map((g) => (
-        <section key={g.salida}>
-          <h4 className="pt-3 pb-1 text-[0.6875rem] font-semibold tracking-wide text-fg2 uppercase phone:text-[0.75rem]">{g.titulo}</h4>
-          {g.filas.map((f, i) => {
-            const t = tonoChip(f)
-            const body = (
-              <>
-                <span className="flex min-w-0 items-center gap-2">
-                  <span className={clsx('shrink-0 rounded-full border px-1.5 text-[0.6875rem] leading-4 phone:text-[0.75rem]', LINEA[t])}>{chip(f)}</span>
-                  <span className={clsx('truncate text-[0.875rem] phone:text-[0.9375rem]', f.hecha ? 'text-fg2' : 'text-fg')}>{f.titulo}</span>
-                </span>
-                <span className="flex min-w-0 gap-1.5 text-[0.75rem] text-fg3 phone:text-[0.8125rem]">
-                  {f.equipo ? <span className={clsx('shrink-0', EQUIPO[f.equipo] || 'text-fg2')}>{f.equipo}</span> : null}
-                  <span className="truncate">{f.nota || f.de}</span>
-                </span>
-                <Pista f={f} ya={ya} />
-              </>
-            )
-            const cls = 'flex flex-col gap-1 border-t border-line py-2'
-            return isLink(f.link) ? (
-              <a key={f.id || i} href={f.link} target="_blank" rel="noreferrer" className={clsx(cls, 'press -mx-2 rounded-row px-2 hover:bg-hover')}>{body}</a>
-            ) : (
-              <div key={f.id || i} className={cls}>{body}</div>
-            )
-          })}
-        </section>
-      ))}
     </div>
   )
 }
@@ -345,7 +377,7 @@ function Panel({ foto, onClose, mias, setMias }: { foto: Foto | null | 'error'; 
                 </h3>
                 {p.aviso ? <p className="px-2 pb-1 text-[0.8125rem] text-need-fg">{p.aviso}</p> : null}
                 {vista === 'tablero' ? <Tablero p={p} /> : null}
-                {vista === 'gantt' ? <Gantt p={p} /> : null}
+                {vista === 'gantt' ? <Gantt p={p} medidas={ok.medidas ?? []} at={ok.at} decisiones={abiertasDe(p, mias)} verDecisiones={() => setVista('decisiones')} /> : null}
                 {vista === 'decisiones' ? <Decisiones p={p} mias={mias} setMias={setMias} /> : null}
                 {vista === 'iniciativas' ? <>
                 {p.epicas.map((e, i) => {

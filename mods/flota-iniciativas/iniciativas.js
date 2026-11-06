@@ -57,7 +57,7 @@ export function leer(archivo, texto, respuestas = null) {
   if (mala !== undefined) return mal(`hay una decisión sin "id" o sin "pregunta"${mala?.id ? ` (${mala.id})` : ""}`);
   const tarea = (t) => ({
     id: str(t.id), titulo: t.titulo, estado: str(t.estado) || "en cola", link: str(t.link), sesion: str(t.sesion),
-    // Opcionales, solo para el Gantt (README, «Gantt»).
+    // Opcionales, solo para el Gantt (README, «Tablero y Gantt»).
     salida: str(t.salida), desde: str(t.desde), hasta: str(t.hasta), estimada: Boolean(t.estimada),
     ritmo: str(t.ritmo), nota: str(t.nota), equipo: str(t.equipo),
   });
@@ -70,6 +70,8 @@ export function leer(archivo, texto, respuestas = null) {
       .sort(porClave(clave)),
     sueltas: ordenTareas(sueltas.map(tarea)),
     decisiones: decisiones(decs, respuestas),
+    // Opcionales, para el pie del Gantt: una frase por cosa.
+    produccion: textos(d.produccion), riesgos: textos(d.riesgos),
   };
 }
 
@@ -94,6 +96,7 @@ export const abiertas = (p) => (p.error ? 0 : p.decisiones.filter((x) => x.estad
 export const cuantas = (n) => `${n} abierta${n === 1 ? "" : "s"}`;
 
 const ordenTareas = (ts) => ts.sort(porClave((t) => [rango(t.estado), 0]));
+const textos = (v) => (Array.isArray(v) ? v : v ? [v] : []).map(str).filter(Boolean);
 const str = (v) => (typeof v === "string" ? v : v == null ? "" : String(v));
 
 // Avance de una épica: cuántas tareas hay en cada tono, para la barra y el «3/10».
@@ -129,37 +132,123 @@ export function tablero(p) {
   return { columnas, merged };
 }
 
-// Gantt del día (skill gantt-flota): filas agrupadas por salida a producción, barra de `desde` a `hasta` sobre
-// las 06:00–21:00 de Bogotá. Solo entran las tareas con `salida`; sin ninguna, el panel muestra SIN_PLAN.
+// Gantt del día (skill gantt-flota): una fila por tarea de hoy, con sus barras sobre las 06:00–21:00 de Bogotá (el eje
+// se estira hasta las 24:00 para que quepan la hora actual y lo que se trabaja o se estima de noche; lo de antes de las
+// 06:00 queda pegado al borde).
+// Las horas salen solas de herdr-task (`medidas`: las tareas de ~/.herdr/tasks/*.json, que junta el panel del
+// escritorio y viajan en la foto de la web): de cuando arrancó su agente a cuando quedó lista, o hasta ahora si sigue.
+// `desde` y `hasta` del TPM mandan sobre lo medido; `salida` agrupa por salida a producción y sin ella la fila va en
+// «Hoy». Una tarea sin horas medidas ni escritas no entra; sin ninguna, el panel dice SIN_PLAN.
 export const H0 = 6, H1 = 21, SALIDAS = [7, 12, 19];
-export const SIN_PLAN = "Sin plan del día: el TPM aún no puso «salida», «desde» y «hasta» en las tareas";
+export const SIN_PLAN = "Nada hoy: ninguna tarea arrancó su agente de herdr-task hoy ni trae «desde» y «hasta»";
 const hora = (s) => { const m = /^(\d{1,2}):(\d{2})$/.exec(s); return m && +m[1] < 24 && +m[2] < 60 ? +m[1] + m[2] / 60 : null; };
-// Posición en % del eje, recortada a sus bordes.
-export const pos = (h) => Math.min(100, Math.max(0, ((h - H0) / (H1 - H0)) * 100));
-// La hora actual en Bogotá (UTC−5, sin horario de verano), en horas; null fuera del eje.
-export function ahora(now = Date.now() / 1000) {
-  const h = (((now - 5 * 3600) % 86400) + 86400) % 86400 / 3600;
-  return h >= H0 && h <= H1 ? h : null;
+// Posición en % del eje (de h0 a h1), recortada a sus bordes.
+export const pos = (h, h0 = H0, h1 = H1) => Math.min(100, Math.max(0, ((h - h0) / (h1 - h0)) * 100));
+// Bogotá es UTC−5, sin horario de verano. dia0: su medianoche de hoy, en segundos.
+const dia0 = (now) => now - ((((now - 5 * 3600) % 86400) + 86400) % 86400);
+// La hora actual en Bogotá, en horas; null fuera del eje.
+export function ahora(now = Date.now() / 1000, h0 = H0, h1 = H1) {
+  const h = (now - dia0(now)) / 3600;
+  return h >= h0 && h <= h1 ? h : null;
 }
-// El chip de una palabra: el `ritmo` si lo hay; si no, «listo» lo mergeado y el estado lo demás. Y su tono.
+// «14:08» de una hora del día (las de ayer, «ayer 23:20»).
+export function hhmm(h) {
+  const m = Math.floor((((h % 24) + 24) % 24) * 60 + 1e-6);
+  return `${h < 0 ? "ayer " : ""}${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+}
+// El chip de una palabra: el `ritmo` si lo hay; si no, «listo» lo terminado, «te espera» lo que aguarda el visto bueno
+// de Juan (lista en herdr-task o con PR abierto) y el estado lo demás. Y su tono.
 const RITMOS = { "listo": "hecha", "a tiempo": "curso", "en riesgo": "riesgo", "atrasado": "bloqueada", "te espera": "espera" };
-export const chip = (t) => t.ritmo || (t.estado === "merged" ? "listo" : t.estado);
+export const chip = (t) => t.ritmo || (t.hecha || t.estado === "merged" ? "listo" : t.espera || t.estado === "PR abierto" ? "te espera" : t.estado);
 export const tonoChip = (t) => RITMOS[chip(t)] || tono(t.estado);
 
-export function gantt(p) {
-  const grupos = new Map();
+// Qué tarea de herdr-task es esta: su `ref` (HF-17) igual al `id`; si no, dentro de los espacios del producto, el
+// terminal de `sesion`, el PR de `link` o el código del título («E4.1 · …», como los nombra el TPM de Letz).
+const codigo = (s) => /^(\S+) · /.exec(s || "")?.[1] || "";
+function medidasDe(t, medidas, espacios) {
+  const aqui = (m) => !espacios.length || espacios.includes(m.space), c = codigo(t.titulo);
+  return medidas.filter((m) => m.started && ((t.id && m.ref === t.id) || (aqui(m) &&
+    ((t.sesion && (m.agentes || []).includes(t.sesion)) || (t.link && m.pr === t.link) || (c && codigo(m.titulo) === c)))))
+    .sort((a, b) => a.started - b.started);
+}
+// Vivo: corre y tiene algún agente sin terminar (todos terminados = se detuvo, en `fin`).
+const vivo = (m) => m.estado === "running" && !m.fin;
+const deHoy = (m, d0) => vivo(m) || m.estado === "ready" || [m.started, m.ready_at, m.done_at, m.fin].some((x) => x && x / 1000 >= d0);
+// Barras de una tarea medida, [desde, hasta, texto, estimada, hecha, tono] en horas de hoy: el trabajo de su agente;
+// si corre, lo que dice que le falta (rayado); si quedó lista, lo que lleva esperando a Juan, o lo que esperó.
+function barrasDe(m, now, d0) {
+  const h = (ms) => (ms / 1000 - d0) / 3600, ya = (now - d0) / 3600;
+  const fin = vivo(m) ? ya : h(m.estado === "running" ? m.fin : m.ready_at || m.done_at || m.fin || now * 1000);
+  const out = [[h(m.started), fin, null, false, m.estado === "done"]];
+  const p = m.progreso;
+  if (vivo(m) && p?.at && p.left > 0 && h(p.at + p.left) > ya) out.push([ya, h(p.at + p.left), `falta ${dura(p.at + p.left - now * 1000)}`, true, false]);
+  if (m.estado === "ready" && m.ready_at) out.push([h(m.ready_at), ya, "te espera", false, false, "espera"]);
+  if (m.estado === "done" && m.ready_at && m.done_at > m.ready_at) out.push([h(m.ready_at), h(m.done_at), "visto bueno", false, true, "espera"]);
+  return out;
+}
+const notaDe = (m) => vivo(m) ? m.progreso?.texto || "en curso"
+  : m.estado === "running" ? `se detuvo a las ${hhm(m.fin)}`
+  : m.estado === "ready" ? `lista a las ${hhm(m.ready_at)} · espera tu visto bueno`
+  : m.estado === "done" ? `${m.pr ? `${enlace(m.pr)} · ` : ""}${m.pr ? "mergeada" : "terminada"} a las ${hhm(m.done_at)}` : "";
+const dura = (ms) => (ms < 90 * 60000 ? `~${Math.ceil(ms / 60000)} min` : `~${Math.round(ms / 3600000)} h`);
+const hhm = (ms) => hhmm((ms / 1000 - dia0(ms / 1000)) / 3600);
+// Lo que dice el enlace de una fila: ClickUp, «PR #17» o «enlace».
+export const enlace = (url) => /clickup\.com/.test(url) ? "ClickUp" : /\/pull\/(\d+)/.test(url) ? `PR #${/\/pull\/(\d+)/.exec(url)[1]}` : /^https?:\/\//.test(url) ? "enlace" : "";
+
+// medidas: la lista de la foto (README, «Tablero y Gantt»). now: en segundos.
+// Devuelve { h0, h1, ya, marcas, grupos }: el eje en horas, la hora actual (null fuera del eje), las horas que se
+// rotulan y los bloques, cada fila con sus `barras` { x, w (en % del eje), texto, estimada, hecha, tono }.
+export function gantt(p, medidas = [], now = Date.now() / 1000) {
+  const d0 = dia0(now), filas = [];
   for (const t of tareas(p)) {
-    if (!t.salida) continue;
+    const ms = medidasDe(t, medidas, p.espacios || []).filter((m) => deHoy(m, d0));
     const a = hora(t.desde), b = hora(t.hasta);
-    const barra = a != null && b != null && b > a ? { x: pos(a), w: pos(b) - pos(a) } : null;
-    if (!grupos.has(t.salida)) grupos.set(t.salida, []);
-    grupos.get(t.salida).push({ ...t, barra, hecha: t.estado === "merged" });
+    const barras = a != null && b != null ? [[a, b, `${t.desde}–${t.hasta}`, t.estimada, t.estado === "merged"]] : ms.flatMap((m) => barrasDe(m, now, d0));
+    if (!(a != null && b != null) && barras.length) { // una sola hora escrita: manda sobre el primer tramo medido
+      if (a != null) barras[0][0] = a;
+      if (b != null) { barras[0][1] = b; barras[0][3] = t.estimada; }
+    }
+    const hoy = barras.filter(([x, y]) => y > x && y > H0 && x < 24);
+    if (!hoy.length) continue;
+    const ultima = ms[ms.length - 1], link = t.link || ultima?.pr || "";
+    filas.push({ ...t, barras: hoy, link, enlace: enlace(link), quien: t.equipo || ultima?.asiento || "", nota: t.nota || (ultima ? notaDe(ultima) : "") || t.de,
+      hecha: t.estado === "merged" || (ms.length > 0 && ms.every((m) => m.estado === "done")), espera: ms.some((m) => m.estado === "ready") });
   }
-  // Primero las salidas de hoy por hora; después «mañana» y las demás, en el orden del archivo.
-  const orden = (s) => hora(s) ?? 99;
-  return [...grupos].sort(([x], [y]) => orden(x) - orden(y)).map(([salida, filas]) => ({
-    salida,
-    titulo: hora(salida) != null ? `Sale a las ${salida}` : salida === "mañana" ? "Mañana o después" : `Sale ${salida}`,
-    filas,
-  }));
+  const yo = (now - d0) / 3600, todas = filas.flatMap((f) => f.barras);
+  const fin = Math.min(24, Math.max(H1, ...(filas.length ? [Math.ceil(yo + 0.01)] : []), ...todas.map(([, y]) => Math.ceil(y))));
+  // Estirado, el eje termina en una hora rotulada (cada 3 h si pasa de 16 h).
+  const h0 = H0, paso = fin - h0 > 16 ? 3 : 2, h1 = fin === H1 ? H1 : Math.min(24, h0 + paso * Math.ceil((fin - h0) / paso));
+  const grupos = new Map();
+  for (const f of filas) {
+    f.barras = f.barras.map(([x, y, texto, estimada, hecha, tono]) => {
+      const l = pos(x, h0, h1);
+      return { x: l, w: Math.min(100 - l, Math.max(0.6, pos(y, h0, h1) - l)), texto: texto ?? `${hhmm(x)}–${hhmm(y)}`, estimada: Boolean(estimada), hecha: Boolean(hecha), tono: tono || "" };
+    });
+    if (!grupos.has(f.salida)) grupos.set(f.salida, []);
+    grupos.get(f.salida).push(f);
+  }
+  // Primero las salidas de hoy por hora, después «Hoy» (sin salida) y al final «mañana» y las demás, en el orden del archivo.
+  const orden = (s) => hora(s) ?? (s ? 99 : 50);
+  return {
+    h0, h1, ya: ahora(now, h0, h1),
+    marcas: Array.from({ length: Math.floor((h1 - h0) / paso) + 1 }, (_, i) => h0 + i * paso),
+    grupos: [...grupos].sort(([x], [y]) => orden(x) - orden(y)).map(([salida, filas]) => ({
+      salida,
+      titulo: !salida ? "Hoy" : hora(salida) != null ? `Sale a las ${salida}` : salida === "mañana" ? "Mañana o después" : `Sale ${salida}`,
+      filas,
+    })),
+  };
+}
+
+// El pie del Gantt: lo que ya salió (`produccion` del TPM o, sin ella, lo que quedó listo hoy), los riesgos (`riesgos`
+// del TPM o, sin ellos, lo bloqueado, en riesgo o atrasado) y cuántas decisiones esperan a Juan.
+export function pie(p, g) {
+  const hoy = g.grupos.flatMap((x) => x.filas);
+  return {
+    produccion: p.produccion?.length ? { titulo: "Ya en producción", items: p.produccion }
+      : { titulo: "Listo hoy", items: hoy.filter((f) => f.hecha).map((f) => `${f.titulo} · ${f.nota}`) },
+    riesgos: p.riesgos?.length ? p.riesgos
+      : tareas(p).filter((t) => t.estado === "bloqueada" || ["en riesgo", "atrasado"].includes(t.ritmo)).map((t) => t.nota ? `${t.titulo}: ${t.nota}` : t.titulo),
+    decisiones: abiertas(p),
+  };
 }
