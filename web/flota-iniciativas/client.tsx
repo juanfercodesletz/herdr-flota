@@ -326,9 +326,10 @@ function useMiasVigentes(foto: Foto | null | 'error', setMias: (f: (m: Mias) => 
  * puede escribir con sus palabras (solo o junto a la opción). Se cambia mientras el TPM no la cierre */
 function Decisiones({ p, mias, setMias }: { p: Producto; mias: Mias; setMias: (f: (m: Mias) => Mias) => void }) {
   const [borrador, setBorrador] = useState<Record<string, string>>({})
-  // guardado, el borrador se suelta: el campo muestra lo guardado, y lo que llegue después desde el escritorio
+  // guardado, el borrador se suelta (el campo muestra lo guardado, y lo que llegue después desde el escritorio), salvo
+  // que Juan siguiera escribiendo mientras se guardaba: eso no se toca
   const guardar = (id: string, respuesta: string, texto: string) => responder(p.archivo, id, respuesta, texto, setMias).then((ok) => {
-    if (ok) setBorrador((b) => Object.fromEntries(Object.entries(b).filter(([k]) => k !== id)))
+    if (ok) setBorrador((b) => (b[id] === undefined || b[id] === texto ? Object.fromEntries(Object.entries(b).filter(([k]) => k !== id)) : b))
   })
   const decs = (p.decisiones ?? []).map((d) => conMia(p, d, mias))
   if (!decs.length) return <p className="px-2 py-1 text-[0.875rem] text-fg3">Sin decisiones abiertas.</p>
