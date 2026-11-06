@@ -235,7 +235,7 @@ function Gantt({ p, medidas, at, mias, setMias }: { p: Producto; medidas: unknow
         <>
           <Leyenda />
           <div className="relative h-4 text-[0.6875rem] text-fg3 tabular-nums" aria-hidden="true">
-            {g.marcas.map((h) => (
+            {g.marcas.filter((h) => g.ya == null || Math.abs(h - g.ya) > (g.h1 - g.h0) * 0.07).map((h) => (
               <span key={h} className={clsx('absolute -translate-x-1/2', SALIDAS.includes(h) && 'text-fg2')} style={{ left: P(h) }}>{String(h % 24).padStart(2, '0')}</span>
             ))}
             {g.ya != null ? <span className="absolute z-10 bg-bg px-1 font-semibold whitespace-nowrap text-orange-500" style={{ left: P(g.ya), transform: g.ya > (g.h0 + g.h1) / 2 ? 'translateX(-100%)' : undefined }}>ahora {hhmm(g.ya)}</span> : null}

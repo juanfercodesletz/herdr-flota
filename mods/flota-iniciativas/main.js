@@ -283,7 +283,8 @@ export default class Iniciativas extends View {
       .when(g.ya != null, (el) => el.child(div().absolute().left(P(g.ya)).top(0).bottom(0).w(2).bg(NARANJA)));
     const eje = h_flex().h(18).when(ancho, (e) => e.child(div().w(IZQ).flex_none()))
       .child(div().relative().flex_1().h_full()
-        .children(g.marcas.map((h) => div().absolute().left(P(h)).ml(-15).w(30).text_size(10).text_color(SALIDAS.includes(h) ? t.muted : t.dim).child(`${String(h % 24).padStart(2, "0")}:00`)))
+        // Sin la hora rotulada que quedaría debajo del rótulo de ahora.
+        .children(g.marcas.filter((h) => g.ya == null || Math.abs(h - g.ya) > (g.h1 - g.h0) * 0.07).map((h) => div().absolute().left(P(h)).ml(-15).w(30).text_size(10).text_color(SALIDAS.includes(h) ? t.muted : t.dim).child(`${String(h % 24).padStart(2, "0")}:00`)))
         // Pasada la mitad, el rótulo de ahora va a la izquierda de su raya, para no salirse por el borde.
         .when(g.ya != null, (el) => el.child(div().absolute().left(P(g.ya)).w(66).ml(g.ya > (g.h0 + g.h1) / 2 ? -70 : 4).flex()
           .when(g.ya > (g.h0 + g.h1) / 2, (e) => e.justify_end())
@@ -314,7 +315,7 @@ export default class Iniciativas extends View {
     const chipL = ([c, tono, dice]) => h_flex().gap(4).items_center()
       .child(div().px(6).rounded(8).bg(color[tono]).text_size(10.5).text_color(t.background).child(c))
       .when(Boolean(dice), (e) => e.child(div().text_size(11).text_color(t.dim).child(dice)));
-    const barraL = (texto, el) => h_flex().gap(5).items_center().child(el.w(22).h(10).rounded(3)).child(div().text_size(11).text_color(t.dim).child(texto));
+    const barraL = (texto, el, w = 22) => h_flex().gap(5).items_center().child(el.w(w).h(10).rounded(3)).child(div().text_size(11).text_color(t.dim).child(texto));
     return v_flex().pb(8).gap(5)
       .child(h_flex().flex_wrap().gap_x(12).gap_y(4).children(LEYENDA.map(chipL))
         .child(div().text_size(11).text_color(t.dim).child("sin ritmo, su estado")))
@@ -322,7 +323,7 @@ export default class Iniciativas extends View {
         .child(barraL("medida o escrita", div().bg(color.curso).opacity(0.92)))
         .child(barraL("estimada", div().border_1().border_dashed().border_color(color.curso).bg(t.hover)))
         .child(barraL("terminada", div().bg(color.hecha).opacity(0.45)))
-        .child(barraL("ahora", div().w(2).bg(NARANJA))));
+        .child(barraL("ahora", div().bg(NARANJA), 2)));
   }
 
   // El pie del Gantt, como el del artefacto: dos tarjetas (lo listo o ya en producción, y los riesgos) y las decisiones
