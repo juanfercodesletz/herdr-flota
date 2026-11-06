@@ -1,7 +1,7 @@
 // node shell/prueba-iniciativas.mjs: el lector de ~/.herdr/flota/<producto>.json con el ejemplo y con archivos malos.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { leer, avance, tono, tablero, gantt, pie, pos, hhmm, LEYENDA, rotulos, dicha, explicacion, ahora, chip, tonoChip, ordenar, esperan, abiertas, cuantas, delEspacio, esHome, SIN_INICIATIVAS } from "../mods/flota-iniciativas/iniciativas.js";
+import { leer, avance, tono, tablero, gantt, pie, pos, hhmm, LEYENDA, eje, textosFila, dicha, explicacion, ahora, chip, tonoChip, ordenar, esperan, abiertas, cuantas, delEspacio, esHome, SIN_INICIATIVAS } from "../mods/flota-iniciativas/iniciativas.js";
 
 const ej = leer("veta.json", readFileSync(new URL("../ejemplos/veta.json", import.meta.url), "utf8"));
 assert.equal(ej.error, undefined);
@@ -44,13 +44,14 @@ assert.equal(tb.merged, 4);
 assert.equal(tb.columnas[4].tareas[0].de, "Órdenes de compra en causaciones");
 assert.equal(tablero(leer("x.json", '{"producto":"P","sueltas":[{"titulo":"a","estado":"raro"}]}')).columnas[1].tareas[0].de, "Tarea suelta");
 
-// Gantt con horas escritas: grupos por salida (horas de hoy primero), barra en % del eje 06–21, chip del ritmo o del estado.
+// Gantt con horas escritas: grupos por salida (horas de hoy primero), barra en % del eje (de las 07:00, la primera hora con
+// algo, a las 21:00, la última), chip del ritmo o del estado.
 const B = (h, m = 0) => Date.UTC(2026, 10, 5, h + 5, m); // 5-nov-2026 a las h:m de Bogotá, en ms
 const g = gantt(ej, [], B(17) / 1000);
 assert.deepEqual(g.grupos.map((x) => [x.titulo, x.filas.length]), [["Sale a las 12:00", 1], ["Sale a las 19:00", 4], ["Mañana o después", 2]]);
-assert.deepEqual([g.h0, g.h1, g.ya, g.marcas], [6, 21, 17, [6, 8, 10, 12, 14, 16, 18, 20]]);
-assert.equal(g.grupos[0].filas[0].barras[0].x, 10);
-assert.equal(g.grupos[0].filas[0].barras[0].w.toFixed(2), "26.67");
+assert.deepEqual([g.h0, g.h1, g.ya, g.marcas], [7, 21, 17, [8, 10, 12, 14, 16, 18, 20]]);
+assert.equal(g.grupos[0].filas[0].barras[0].x.toFixed(2), "3.57");
+assert.equal(g.grupos[0].filas[0].barras[0].w.toFixed(2), "28.57");
 assert.equal(g.grupos[0].filas[0].barras[0].texto, "07:30–11:30");
 assert.equal(g.grupos[0].filas[0].hecha, true);
 assert.equal(g.grupos[0].filas[0].enlace, "ClickUp");
@@ -88,15 +89,16 @@ const m = gantt(hf, medidas, B(17) / 1000);
 const fila = (id) => m.grupos.flatMap((x) => x.filas).find((f) => f.id === id);
 const textos = (id) => fila(id).barras.map((b) => `${b.texto}${b.estimada ? " ~" : ""}${b.hecha ? " °" : ""}`);
 assert.deepEqual(m.grupos.map((x) => [x.titulo, x.filas.map((f) => f.id)]), [["Sale a las 12:00", ["HF-21"]], ["Hoy", ["86e4", "HF-19", "86e1", "86e2", "HF-17", "HF-18"]]]);
-// HF-17: de cuando arrancó su agente a cuando quedó lista, tenue; luego lo que esperó a Juan. Enlace y nota del store.
-assert.deepEqual(textos("HF-17"), ["14:08–17:25 °", "visto bueno °"]);
+// HF-17: de cuando arrancó su agente a cuando quedó lista, tenue; lo que esperó a Juan (3 min) no se pinta: sería una
+// astilla, y la nota dice a qué hora se mergeó (HF-20). Enlace y nota del store.
+assert.deepEqual(textos("HF-17"), ["14:08–17:25 °"]);
 assert.deepEqual([fila("HF-17").enlace, fila("HF-17").link, fila("HF-17").nota, chip(fila("HF-17")), fila("HF-17").quien],
-  ["PR #17", "https://github.com/o/r/pull/17", "PR #17 · mergeada a las 17:28", "listo", "claude opus"]);
+  ["PR #17", "https://github.com/o/r/pull/17", "PR #17 · mergeada a las 17:28", "listo", ""]); // sin equipo, nada: no el modelo del asiento
 assert.deepEqual(textos("HF-18"), ["14:00–15:13 °", "visto bueno °"]); // `desde` escrito manda sobre el inicio medido
 assert.deepEqual(textos("HF-21"), ["08:00–09:00 °"]); // `desde` y `hasta` escritos mandan sobre todo lo medido
 // En curso: llega hasta la raya de ahora, y lo que le falta va rayado; la nota es su línea de herdr-task status.
 assert.deepEqual(textos("HF-19"), ["15:00–17:00", "falta ~30 min ~"]);
-assert.equal(fila("HF-19").barras[0].x + fila("HF-19").barras[0].w, pos(m.ya));
+assert.ok(Math.abs(fila("HF-19").barras[0].x + fila("HF-19").barras[0].w - pos(m.ya, m.h0, m.h1)) < 1e-9);
 assert.deepEqual([fila("HF-19").nota, chip(fila("HF-19"))], ["Pruebas del lector", "en curso"]);
 assert.deepEqual([textos("86e1"), chip(fila("86e1")), fila("86e1").nota], [["09:00–12:00", "te espera"], "te espera", "lista a las 12:00 · espera tu visto bueno"]); // por sesion
 assert.deepEqual([textos("86e2"), fila("86e2").nota], [["10:00–11:00"], "se detuvo a las 11:00"]); // por código del título; sus agentes ya no corren
@@ -122,13 +124,46 @@ assert.deepEqual(pausa.grupos[0].filas[0].barras.map((b) => b.texto), ["09:00–
 const borde = gantt(sola, [M({ ref: "HF-3", estado: "running", started: B(6) })], B(6, 1) / 1000), bb = borde.grupos[0].filas[0].barras[0];
 assert.ok(bb.x === 0 && Math.abs(bb.w - pos(borde.ya, borde.h0, borde.h1)) < 1e-9);
 assert.match(explicacion("rayada"), /rayada: lo que dice que le falta/);
-// De noche el eje se estira hasta la hora actual (y lo estimado), sin pasar de las 24.
+// De noche el eje se estira hasta la hora actual (con un margen) y lo estimado, sin pasar de las 24.
 const noche = gantt(hf, medidas, B(22, 13) / 1000);
-assert.deepEqual([noche.h1, noche.ya.toFixed(2), noche.marcas.at(-1)], [24, "22.22", 24]);
-assert.deepEqual(gantt(hf, medidas, B(21, 30) / 1000).marcas.at(-1), 22); // estirado, termina en una marca
-// Los rótulos de hora no chocan con el de ahora: a las 22:13 (a la izquierda de su raya), sin las 21.
-assert.deepEqual(rotulos(noche, 0.12), [6, 9, 12, 15, 18, 24]);
-assert.deepEqual(rotulos(gantt(hf, medidas, B(8) / 1000), 0.12), [6, 12, 14, 16, 18, 20]); // a las 08:00, a la derecha: sin las 8 ni las 10
+assert.deepEqual([noche.h0, noche.h1, noche.ya.toFixed(2), noche.marcas], [8, 23, "22.22", [8, 10, 12, 14, 16, 18, 20, 22]]);
+assert.equal(gantt(hf, medidas, B(23, 50) / 1000).h1, 24);
+// HF-20: el eje cubre solo las horas con algo, al menos 4 h (una tarea de 10 a 11, a las 11:20: de 10 a 14, cada hora).
+const corta = gantt(leer("c.json", '{"producto":"P","sueltas":[{"titulo":"a","desde":"10:00","hasta":"11:00"}]}'), [], B(11, 20) / 1000);
+assert.deepEqual([corta.h0, corta.h1, corta.marcas], [10, 14, [10, 11, 12, 13, 14]]);
+// HF-20: lo de ayer que apenas asoma (su agente paró a las 00:12) no es una astilla en las 00:00 ni estira el eje: la
+// fila lo dice en texto. Lo que se trabajó de verdad pasada la medianoche (hasta las 03:00) sí se pinta.
+const asoma = gantt(sola, [M({ ref: "HF-1", estado: "running", started: B(17, 40) - 86400000, fin: B(0, 12) }), M({ ref: "HF-3", estado: "running", started: B(9) })], B(11) / 1000);
+const [a1, a3] = ["HF-1", "HF-3"].map((id) => asoma.grupos[0].filas.find((f) => f.id === id));
+assert.deepEqual([a1.barras, a1.sinBarra, a1.nota, asoma.h0], [[], "sin trabajo hoy (ayer 17:40–00:12)", "se detuvo a las 00:12", 9]);
+assert.equal(a3.sinBarra, "");
+// Revisión de codex: trabajó ayer, quedó lista a las 23:59 y se mergeó a las 00:05: no tiene tramo hoy, pero entra (y va
+// en «Listo hoy») con su texto.
+const anoche = gantt(sola, [M({ ref: "HF-1", started: B(22) - 86400000, ready_at: B(23, 59) - 86400000, done_at: B(0, 5) })], B(11) / 1000);
+assert.deepEqual([anoche.grupos[0].filas[0].sinBarra, pie(sola, anoche).produccion.items], ["sin trabajo hoy (ayer 22:00–23:59)", ["Una · terminada a las 00:05"]]);
+assert.equal(cruza.grupos[0].filas[0].sinBarra, "");
+// HF-20: los rótulos del eje no chocan ni se salen de la pista: primero ahora, después las salidas (con nombre), al final
+// las horas. A las 22:13 en 520 px caben las dos salidas; en 300 px, la de las 19 no cabe junto a ahora y se van las
+// horas que chocan con la de las 12.
+const rot = (g, w) => eje(g, w).map((r) => r.texto);
+assert.deepEqual(rot(noche, 520), ["08:00", "10:00", "salida 12:00", "14:00", "16:00", "salida 19:00", "ahora 22:13"]);
+assert.deepEqual(rot(noche, 300), ["08:00", "salida 12:00", "16:00", "18:00", "ahora 22:13"]);
+for (const [g, w] of [[noche, 300], [noche, 140], [m, 520], [corta, 200]]) {
+  const rs = eje(g, w), px = (r) => (r.x / 100) * w;
+  assert.ok(rs.every((r) => px(r) >= 0 && px(r) + r.w <= w + 1e-9), "dentro de la pista");
+  assert.ok(rs.every((r, i) => i === 0 || px(rs[i - 1]) + rs[i - 1].w <= px(r)), "sin chocar");
+  assert.ok(g.ya == null || rs.some((r) => r.tipo === "ahora"), "ahora siempre");
+}
+assert.deepEqual(eje(noche, 300).map((r) => r.ancla), ["izq", "centro", "centro", "centro", "der"]);
+// HF-20: el texto de una barra va dentro si cabe; si no, al lado, donde haya sitio; lo de `sinBarra`, desde la izquierda.
+const tf = textosFila(fila("HF-17"), 520);
+assert.deepEqual([tf.barras.map((b) => b.dentro), tf.fuera], [[true], null]);
+const angosta = textosFila(fila("HF-17"), 120);
+assert.deepEqual([angosta.barras[0].dentro, angosta.fuera.texto, angosta.fuera.ancla], [false, "14:08–17:25", "der"]); // a la derecha no hay sitio: antes de la barra
+// Si solo la primera barra no cabe (el trabajo, antes de una espera larga), su texto va antes de ella, no tras la espera.
+const dos = textosFila({ sinBarra: "", barras: [{ x: 25, w: 5, texto: "02:59–03:39" }, { x: 30, w: 54, texto: "visto bueno" }] }, 545);
+assert.deepEqual([dos.barras.map((b) => b.dentro), dos.fuera.ancla, dos.fuera.texto], [[false, true], "der", "02:59–03:39"]);
+assert.deepEqual(textosFila(a1, 300).fuera, { texto: "sin trabajo hoy (ayer 17:40–00:12)", x: (4 / 300) * 100, w: 100 - (4 / 300) * 100, ancla: "izq" });
 // El pie: lo listo hoy (o `produccion` del TPM), los riesgos (o `riesgos`) y las decisiones que esperan.
 assert.deepEqual(pie(hf, m), { produccion: { titulo: "Listo hoy", items: ["Escrita · terminada a las 12:00", "Por PR · PR #4 · mergeada a las 09:30", "Chip · PR #17 · mergeada a las 17:28", "Entorno · terminada a las 17:24"] }, riesgos: [], decisiones: 0 });
 const conPie = leer("p.json", JSON.stringify({ producto: "P", produccion: ["Release 1.217.0"], riesgos: "R019 atrasado", sueltas: [S("a", "Frenada", "bloqueada", { nota: "espera a Charlie" })] }));

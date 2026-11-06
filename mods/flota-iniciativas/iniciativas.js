@@ -135,14 +135,14 @@ export function tablero(p) {
   return { columnas, merged };
 }
 
-// Gantt del día (skill gantt-flota): una fila por tarea de hoy, con sus barras sobre las 06:00–21:00 de Bogotá (el eje
-// se estira, entre las 00:00 y las 24:00, para que quepan la hora actual y lo que se trabajó hoy de madrugada o se trabaja
-// o estima de noche; lo que empezó ayer arranca en las 00:00).
+// Gantt del día (skill gantt-flota): una fila por tarea de hoy, con sus barras sobre las horas de hoy en Bogotá. El eje
+// cubre solo lo que hay: de la primera hora con algo a la última (o a la hora actual), entre las 00:00 y las 24:00.
 // Las horas salen solas de herdr-task (`medidas`: las tareas de ~/.herdr/tasks/*.json, que junta el panel del
 // escritorio y viajan en la foto de la web): de cuando arrancó su agente a cuando quedó lista, o hasta ahora si sigue.
 // `desde` y `hasta` del TPM mandan sobre lo medido; `salida` agrupa por salida a producción y sin ella la fila va en
-// «Hoy». Una tarea sin horas medidas ni escritas no entra; sin ninguna, el panel dice SIN_PLAN.
-export const H0 = 6, H1 = 21, SALIDAS = [7, 12, 19];
+// «Hoy». Una tarea sin horas medidas ni escritas no entra; sin ninguna, el panel dice SIN_PLAN. Lo de ayer que apenas
+// asoma pasada la medianoche no se pinta (sería una astilla en el borde): la fila lo dice en texto (`sinBarra`).
+export const H0 = 6, H1 = 21, SALIDAS = [7, 12, 19], ASOMA = 0.5;
 export const SIN_PLAN = "Nada hoy: ninguna tarea arrancó su agente de herdr-task hoy ni trae «desde» y «hasta»";
 const hora = (s) => { const m = /^(\d{1,2}):(\d{2})$/.exec(s); return m && +m[1] < 24 && +m[2] < 60 ? +m[1] + m[2] / 60 : null; };
 // Posición en % del eje (de h0 a h1), recortada a sus bordes.
@@ -192,7 +192,8 @@ function barrasDe(m, now, d0) {
   const vence = p?.paused_at ? now * 1000 + p.left - (p.paused_at - p.at) : p?.at + p?.left;
   if (vivo(m) && p?.at && p.left > 0 && h(vence) > ya) out.push([ya, h(vence), `falta ${dura(vence - now * 1000)}`, true, false]);
   if (m.estado === "ready" && m.ready_at) out.push([h(m.ready_at), ya, "te espera", false, false, "espera"]);
-  if (m.estado === "done" && m.ready_at && m.done_at > m.ready_at) out.push([h(m.ready_at), h(m.done_at), "visto bueno", false, true, "espera"]);
+  // Lo que esperó, si fue más que un trámite (un visto bueno de un minuto sería otra astilla; la nota dice a qué hora).
+  if (m.estado === "done" && m.ready_at && m.done_at - m.ready_at >= 10 * 60000) out.push([h(m.ready_at), h(m.done_at), "visto bueno", false, true, "espera"]);
   return out;
 }
 const notaDe = (m) => vivo(m) ? m.progreso?.texto || "en curso"
@@ -218,17 +219,21 @@ export function gantt(p, medidas = [], now = Date.now() / 1000) {
       if (b != null) { barras[0][1] = b; barras[0][3] = t.estimada; }
     }
     const hoy = barras.filter(([x, y]) => y > x && y > 0 && x < 24);
-    if (!hoy.length) continue;
+    // Sin tramo hoy entra igual si herdr-task la movió hoy (se mergeó a las 00:05 tras trabajar ayer): su fila lo dice.
+    if (!hoy.length && !ms.length) continue;
+    const visibles = hoy.filter(([x, y]) => x >= 0 || y >= ASOMA);
     const ultima = ms[ms.length - 1], link = t.link || ultima?.pr || "";
-    filas.push({ ...t, barras: hoy, link, enlace: enlace(link), quien: t.equipo || ultima?.asiento || "", nota: t.nota || (ultima ? notaDe(ultima) : "") || t.de,
+    // El equipo (AI, Backend…) lo pone el TPM; sin él, nada: el asiento de herdr-task es un modelo, no un equipo.
+    filas.push({ ...t, barras: visibles, link, enlace: enlace(link), quien: t.equipo, nota: t.nota || (ultima ? notaDe(ultima) : "") || t.de,
+      sinBarra: visibles.length ? "" : `sin trabajo hoy (${hhmm(barras[0][0])}–${hhmm(((Math.max(...barras.map(([, y]) => y)) % 24) + 24) % 24)})`,
       hecha: t.estado === "merged" || (ms.length > 0 && ms.every((m) => m.estado === "done")), espera: ms.some((m) => m.estado === "ready") });
   }
+  // De la primera hora con algo a la última o a la de ahora (con un margen), al menos 4 h; rayas cada 1, 2, 3, 4 o 6 h.
   const yo = (now - d0) / 3600, todas = filas.flatMap((f) => f.barras);
-  const fin = Math.min(24, Math.max(H1, ...(filas.length ? [Math.ceil(yo + 0.01)] : []), ...todas.map(([, y]) => Math.ceil(y))));
-  // Empieza antes de las 06:00 si algo se trabajó hoy antes (lo que viene de ayer, desde las 00:00); estirado, termina en
-  // una hora rotulada (cada 3 h si pasa de 16 h).
-  const h0 = Math.min(H0, ...todas.map(([x]) => Math.floor(Math.max(0, x))));
-  const paso = fin - h0 > 16 ? 3 : 2, h1 = fin === H1 && h0 === H0 ? H1 : Math.min(24, h0 + paso * Math.ceil((fin - h0) / paso));
+  let h0 = filas.length ? Math.floor(Math.min(yo, ...todas.map(([x]) => Math.max(0, x)))) : H0;
+  let h1 = filas.length ? Math.min(24, Math.ceil(Math.max(yo + 0.25, ...todas.map(([, y]) => Math.min(24, y))))) : H1;
+  if (h1 - h0 < 4) { h1 = Math.min(24, h0 + 4); h0 = h1 - 4; }
+  const paso = [1, 2, 3, 4, 6].find((n) => (h1 - h0) / n <= 8);
   const grupos = new Map();
   for (const f of filas) {
     f.barras = f.barras.map(([x, y, texto, estimada, hecha, tono]) => {
@@ -243,7 +248,7 @@ export function gantt(p, medidas = [], now = Date.now() / 1000) {
   const orden = (s) => hora(s) ?? (s ? 99 : 50);
   return {
     h0, h1, ya: ahora(now, h0, h1),
-    marcas: Array.from({ length: Math.floor((h1 - h0) / paso) + 1 }, (_, i) => h0 + i * paso),
+    marcas: Array.from({ length: 25 }, (_, i) => i).filter((h) => h >= h0 && h <= h1 && h % paso === 0),
     grupos: [...grupos].sort(([x], [y]) => orden(x) - orden(y)).map(([salida, filas]) => ({
       salida,
       titulo: !salida ? "Hoy" : hora(salida) != null ? `Sale a las ${salida}` : salida === "mañana" ? "Mañana o después" : `Sale ${salida}`,
@@ -252,16 +257,44 @@ export function gantt(p, medidas = [], now = Date.now() / 1000) {
   };
 }
 
-// Las horas que se rotulan sin chocar con el rótulo de ahora, que ocupa `ancho` (en fracción del eje) a la izquierda de
-// su raya si ya pasó la mitad, o a la derecha si no.
-export function rotulos(g, ancho) {
-  if (g.ya == null) return g.marcas;
-  const r = (g.h1 - g.h0) * ancho, izq = g.ya > (g.h0 + g.h1) / 2, de = izq ? g.ya - r : g.ya, a = izq ? g.ya : g.ya + r;
-  return g.marcas.filter((h) => h < de - (g.h1 - g.h0) * 0.03 || h > a + (g.h1 - g.h0) * 0.03);
+// Los rótulos del eje sobre `ancho` px de pista, sin chocar entre sí ni salirse: primero el de ahora, después las salidas a
+// producción y al final las horas. Cada uno centrado en su raya, o pegado al borde por dentro si se saldría. letra: px
+// por carácter (de más, para no quedarse corto). Devuelve [{ h, texto, tipo: ahora|salida|hora, x (% de la izquierda
+// del rótulo), w (px) }].
+const hh = (h) => `${String(h % 24).padStart(2, "0")}:00`;
+export function eje(g, ancho, letra = 5.8) {
+  const todos = [
+    ...(g.ya != null ? [{ h: g.ya, texto: `ahora ${hhmm(g.ya)}`, tipo: "ahora" }] : []),
+    ...SALIDAS.filter((h) => h >= g.h0 && h <= g.h1).map((h) => ({ h, texto: `salida ${hh(h)}`, tipo: "salida" })),
+    ...g.marcas.map((h) => ({ h, texto: hh(h), tipo: "hora" })),
+  ];
+  const puestos = [];
+  for (const r of todos) {
+    const w = r.texto.length * letra, c = (pos(r.h, g.h0, g.h1) / 100) * ancho, l = Math.max(0, Math.min(ancho - w, c - w / 2));
+    if (w > ancho || puestos.some((p) => l < p.l + p.w + 8 && l + w + 8 > p.l)) continue;
+    puestos.push({ ...r, l, w });
+  }
+  return puestos.sort((a, b) => a.l - b.l).map(({ h, texto, tipo, l, w }) =>
+    ({ h, texto, tipo, x: (l / ancho) * 100, w, ancla: l <= 0 ? "izq" : l >= ancho - w - 0.01 ? "der" : "centro" }));
 }
 
-// La línea que explica el Gantt, arriba, como la del artefacto. marca: cómo se ve lo estimado («rayada», «punteada»).
-export const explicacion = (marca) => `Cada fila es una tarea de hoy. A la izquierda: quién la hace, cómo va, su enlace y qué es. A la derecha: la barra va de cuando arrancó su agente a cuando quedó lista, o hasta ahora si sigue (${marca}: lo que dice que le falta; tenue: ya terminada). Las líneas finas son las salidas a producción de las 07:00, 12:00 y 19:00; la naranja es la hora actual.`;
+// Qué texto de cada barra cabe dentro (sobre `ancho` px de pista) y qué va fuera, en una línea junto a la última barra o
+// antes de la primera, donde haya más sitio (allí se corta con «…»). Lo de `sinBarra` va fuera, desde la izquierda.
+// Devuelve { barras (cada una con `dentro`), fuera: null | { texto, x, w (en %), ancla: izq|der } }.
+export function textosFila(f, ancho, letra = 6.2) {
+  const barras = f.barras.map((b) => ({ ...b, dentro: (b.w / 100) * ancho >= b.texto.length * letra + 10 }));
+  const texto = [f.sinBarra, ...barras.filter((b) => !b.dentro).map((b) => b.texto)].filter(Boolean).join(" · ");
+  if (!texto) return { barras, fuera: null };
+  const fin = Math.max(0, ...f.barras.map((b) => b.x + b.w)), ini = Math.min(100, ...f.barras.map((b) => b.x)), gap = (4 / ancho) * 100;
+  const der = 100 - fin - gap, izq = ini - gap, cabe = ((texto.length * letra) / ancho) * 100;
+  if (Math.max(der, izq) < 8) return { barras, fuera: null };
+  // Si solo la primera barra no cabe, su texto va antes de ella (si cabe ahí); si no, después de la última.
+  const antes = barras.length > 1 && !barras[0].dentro && barras.slice(1).every((b) => b.dentro) && izq >= cabe;
+  return { barras, fuera: !antes && (der >= cabe || der >= izq) ? { texto, x: fin + gap, w: der, ancla: "izq" } : { texto, x: ini - gap, w: izq, ancla: "der" } };
+}
+
+// Cómo se lee, en una línea al pie (como el subtítulo del artefacto). marca: cómo se ve lo estimado.
+export const explicacion = (marca) => `Cada barra va de cuando arrancó su agente a cuando quedó lista, o hasta ahora si sigue; ${marca}: lo que dice que le falta; tenue: ya terminada. Las rayas marcadas son las salidas a producción; la naranja, la hora actual.`;
 
 // El pie del Gantt: lo que ya salió (`produccion` del TPM o, sin ella, lo que quedó listo hoy), los riesgos (`riesgos`
 // del TPM o, sin ellos, lo bloqueado, en riesgo o atrasado) y cuántas decisiones esperan a Juan.
