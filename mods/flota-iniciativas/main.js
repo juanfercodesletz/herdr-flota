@@ -284,7 +284,10 @@ export default class Iniciativas extends View {
     const eje = h_flex().h(18).when(ancho, (e) => e.child(div().w(IZQ).flex_none()))
       .child(div().relative().flex_1().h_full()
         .children(g.marcas.map((h) => div().absolute().left(P(h)).ml(-15).w(30).text_size(10).text_color(SALIDAS.includes(h) ? t.muted : t.dim).child(`${String(h % 24).padStart(2, "0")}:00`)))
-        .when(g.ya != null, (el) => el.child(div().absolute().left(P(g.ya)).ml(4).text_size(10).font_semibold().text_color(NARANJA).bg(t.background).child(`ahora ${hhmm(g.ya)}`))));
+        // Pasada la mitad, el rótulo de ahora va a la izquierda de su raya, para no salirse por el borde.
+        .when(g.ya != null, (el) => el.child(div().absolute().left(P(g.ya)).w(66).ml(g.ya > (g.h0 + g.h1) / 2 ? -70 : 4).flex()
+          .when(g.ya > (g.h0 + g.h1) / 2, (e) => e.justify_end())
+          .child(div().px(2).text_size(10).font_semibold().text_color(NARANJA).bg(t.background).child(`ahora ${hhmm(g.ya)}`)))));
     const quien = (f) => h_flex().gap(6).items_center().min_w(0)
       .when(Boolean(f.quien), (e) => e.child(div().flex_none().text_size(10).font_semibold().text_color(EQUIPO[f.quien] || t.muted).child(f.quien.toUpperCase())))
       .child(div().flex_none().px(6).rounded(8).bg(color[tonoChip(f)]).text_size(10.5).text_color(t.background).child(chip(f)))
