@@ -19,3 +19,5 @@
 - Prueba del hook de credenciales: `zsh shell/prueba-credenciales.zsh` (HOME falso; corre install.sh entero con uname, tailscale y shepherdr de mentira, así que no toca servicios). Para una sesión real sin tocar los perfiles: `claude -p --settings ‹json con el hook›`.
 - Para la web con datos de prueba: un vite.config extra en la copia de shepherdr/web con un middleware que sirve /flota/entorno.json desde un archivo, y /api con proxy al tailnet (/shepherdr + cabecera origin).
 - Prueba del chip de perfil: `bun shell/prueba-chip.mjs` (React real en Chrome con reloj falso de Playwright, ~8 s). Para abrir un espacio en la web de prueba: ?place=‹id del espacio›.
+- Prueba del plegado de Entorno: `node shell/prueba-plegado.mjs` (main.js real con herdr y gpui de mentira, ~1 s). Para un clic real en la ventana de Herdr sin cliclick: un binario swift de 10 líneas con CGEvent (mouseMoved/leftMouseDown/leftMouseUp) en coordenadas de window.json.
+- Capturas de Herdr en claro: "theme": "paper" temporal en settings.json (el layout flota no tiene tema y appearance no basta); devuélvelo al terminar.
