@@ -11,7 +11,7 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { definePlugin, placeOf, useSnap, useUI } from '@client/kernel.ts'
 import { Tab, Tabs } from '@client/ui.tsx'
-import { ahora, avance, chip, cuantas, esperan, gantt, hace, hhmm, pie, pos, SALIDAS, SIN_ARCHIVO, SIN_INICIATIVAS, SIN_PLAN, delEspacio, esHome, tablero, tono, tonoChip } from './iniciativas.js'
+import { ahora, avance, chip, cuantas, esperan, gantt, hace, hhmm, LEYENDA, pie, pos, SALIDAS, SIN_ARCHIVO, SIN_INICIATIVAS, SIN_PLAN, delEspacio, esHome, tablero, tono, tonoChip } from './iniciativas.js'
 
 interface Tarea {
   id: string; titulo: string; estado: string; link: string; sesion: string
@@ -189,10 +189,34 @@ function Pista({ f, g }: { f: Fila; g: G }) {
   )
 }
 
+/** la leyenda, arriba del eje como en el artefacto: los chips y qué es cada barra */
+function Leyenda() {
+  const barra = (texto: string, cls: string, style?: object) => (
+    <span className="inline-flex items-center gap-1.5"><span className={clsx('h-2.5 w-5 rounded-[3px]', cls)} style={style} />{texto}</span>
+  )
+  return (
+    <div className="flex flex-col gap-1.5 pb-2 text-[0.75rem] text-fg3">
+      <div className="flex flex-wrap gap-x-3 gap-y-1">
+        {(LEYENDA as [string, string, string][]).map(([c, t, dice]) => (
+          <span key={c} className="inline-flex items-center gap-1"><span className={clsx('rounded-full px-1.5 leading-4 text-bg', DOT[t])}>{c}</span>{dice}</span>
+        ))}
+        <span>sin ritmo, su estado</span>
+      </div>
+      <div className="flex flex-wrap gap-x-3 gap-y-1">
+        {barra('medida o escrita', 'bg-fg2 opacity-90')}
+        {barra('estimada', 'bg-fg2 opacity-75', RAYAS)}
+        {barra('terminada', 'bg-ready opacity-45')}
+        <span className="inline-flex items-center gap-1.5"><span className="h-3 w-0.5 bg-orange-500" />ahora</span>
+      </div>
+    </div>
+  )
+}
+
 /** el Gantt del día (skill gantt-flota): un bloque por salida («Hoy» sin salidas); cada fila con quién la hace, su chip,
- * su enlace, su nombre y su nota, y las barras debajo a todo el ancho, así se lee a 390 px sin desplazarse. Al pie, las
- * decisiones que esperan (llevan a su pestaña), lo listo hoy o ya en producción, y los riesgos */
-function Gantt({ p, medidas, at, decisiones, verDecisiones }: { p: Producto; medidas: unknown[]; at: number; decisiones: number; verDecisiones: () => void }) {
+ * su enlace, su nombre y su nota, y las barras debajo a todo el ancho, así se lee a 390 px sin desplazarse. Al pie, lo
+ * listo hoy o ya en producción, los riesgos, y las decisiones que esperan, que se responden aquí mismo con las tarjetas
+ * de la pestaña Decisiones (el mismo componente, el mismo guardado) */
+function Gantt({ p, medidas, at, mias, setMias }: { p: Producto; medidas: unknown[]; at: number; mias: Mias; setMias: (f: (m: Mias) => Mias) => void }) {
   const g = gantt(p, medidas) as G
   const { produccion, riesgos } = pie(p, g) as { produccion: { titulo: string; items: string[] }; riesgos: string[] }
   const P = (h: number) => `${pos(h, g.h0, g.h1)}%`
@@ -206,9 +230,10 @@ function Gantt({ p, medidas, at, decisiones, verDecisiones }: { p: Producto; med
   )
   return (
     <div className="px-2">
-      <p className="pb-1 text-[0.75rem] text-fg3">Revisado a las {hhmm(ahora(at, 0, 24) ?? 0)}</p>
+      <p className="pb-1.5 text-[0.75rem] text-fg3">Revisado a las {hhmm(ahora(at, 0, 24) ?? 0)}</p>
       {!g.grupos.length ? <p className="py-1 text-[0.875rem] text-fg3">{SIN_PLAN}</p> : (
         <>
+          <Leyenda />
           <div className="relative h-4 text-[0.6875rem] text-fg3 tabular-nums" aria-hidden="true">
             {g.marcas.map((h) => (
               <span key={h} className={clsx('absolute -translate-x-1/2', SALIDAS.includes(h) && 'text-fg2')} style={{ left: P(h) }}>{String(h % 24).padStart(2, '0')}</span>
@@ -226,7 +251,7 @@ function Gantt({ p, medidas, at, decisiones, verDecisiones }: { p: Producto; med
                       <span className={clsx('shrink-0 rounded-full px-1.5 leading-4 text-bg', DOT[tonoChip(f)])}>{chip(f)}</span>
                       <span className={clsx('shrink-0', f.link ? 'text-focus underline underline-offset-2' : 'text-fg3')}>{f.enlace || 'sin enlace'}</span>
                     </span>
-                    <span className={clsx('truncate text-[0.875rem] font-medium max-sm:text-[0.9375rem]', f.hecha ? 'text-fg2' : 'text-fg')}>{f.titulo}</span>
+                    <span className={clsx('text-[0.875rem] leading-snug font-medium max-sm:text-[0.9375rem]', f.hecha ? 'text-fg2' : 'text-fg')}>{f.titulo}</span>
                     <span className="truncate text-[0.75rem] text-fg3 max-sm:text-[0.8125rem]">{f.nota}</span>
                     <Pista f={f} g={g} />
                   </>
@@ -240,16 +265,14 @@ function Gantt({ p, medidas, at, decisiones, verDecisiones }: { p: Producto; med
               })}
             </section>
           ))}
-          <p className="pt-2 text-[0.75rem] text-fg3">Barras: de cuando arrancó su agente a cuando quedó lista · rayada = estimada · tenue = terminada · naranja = ahora</p>
         </>
       )}
-      <button type="button" onClick={verDecisiones} className={clsx('press mt-3 flex min-h-10 w-full items-center rounded-lg border px-3 text-left text-[0.875rem] hover:bg-hover', decisiones ? 'border-need text-need-fg' : 'border-line text-fg2')}>
-        {decisiones ? `${decisiones === 1 ? '1 decisión te espera' : `${decisiones} decisiones te esperan`}` : 'Ninguna decisión te espera'} · ver Decisiones →
-      </button>
-      <div className="mt-2 grid gap-2">
+      <div className="mt-3 grid gap-2">
         {tarjeta(produccion.titulo, produccion.items, produccion.titulo === 'Listo hoy' ? 'Nada terminado hoy todavía.' : '—')}
         {tarjeta('Riesgos', riesgos, 'Sin riesgos a la vista: nada bloqueado, en riesgo ni atrasado.')}
       </div>
+      <h4 className="pt-4 pb-2 text-[0.9375rem] font-semibold">Decisiones que esperan por ti</h4>
+      <div className="-mx-2"><Decisiones p={p} mias={mias} setMias={setMias} /></div>
     </div>
   )
 }
@@ -377,7 +400,7 @@ function Panel({ foto, onClose, mias, setMias }: { foto: Foto | null | 'error'; 
                 </h3>
                 {p.aviso ? <p className="px-2 pb-1 text-[0.8125rem] text-need-fg">{p.aviso}</p> : null}
                 {vista === 'tablero' ? <Tablero p={p} /> : null}
-                {vista === 'gantt' ? <Gantt p={p} medidas={ok.medidas ?? []} at={ok.at} decisiones={abiertasDe(p, mias)} verDecisiones={() => setVista('decisiones')} /> : null}
+                {vista === 'gantt' ? <Gantt p={p} medidas={ok.medidas ?? []} at={ok.at} mias={mias} setMias={setMias} /> : null}
                 {vista === 'decisiones' ? <Decisiones p={p} mias={mias} setMias={setMias} /> : null}
                 {vista === 'iniciativas' ? <>
                 {p.epicas.map((e, i) => {

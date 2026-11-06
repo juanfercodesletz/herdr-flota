@@ -11,7 +11,7 @@
 import { View, div, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { exec, home, appHome, theme, layout, run, props, spaces } from "herdr";
-import { leer, avance, esperan, ordenar, tono, hace, SIN_ARCHIVO, tablero, gantt, pie, hhmm, chip, tonoChip, pos, ahora, SALIDAS, SIN_PLAN, abiertas, cuantas, delEspacio, esHome, SIN_INICIATIVAS } from "./iniciativas.js";
+import { leer, avance, esperan, ordenar, tono, hace, SIN_ARCHIVO, tablero, gantt, pie, hhmm, chip, tonoChip, LEYENDA, pos, ahora, SALIDAS, SIN_PLAN, abiertas, cuantas, delEspacio, esHome, SIN_INICIATIVAS } from "./iniciativas.js";
 
 const VISTAS = [["iniciativas", "Iniciativas"], ["tablero", "Tablero"], ["gantt", "Gantt"], ["decisiones", "Decisiones"]];
 
@@ -153,7 +153,7 @@ export default class Iniciativas extends View {
           .children(lista))
         .child(div().pt(8).text_size(10.5).text_color(t.dim).child(this.vista === "decisiones"
           ? "Las mismas decisiones del Gantt: respóndelas aquí o desde el celular · ★ recomendada"
-          : this.vista === "gantt" ? "Barras: de cuando arrancó su agente a cuando quedó lista (herdr-task) · punteada = estimada · tenue = terminada"
+          : this.vista === "gantt" ? "Horas de herdr-task · el TPM puede fijarlas con «desde» y «hasta»"
           : "Épicas y tareas de ClickUp · el TPM las iguala en cada tick")));
 
     if (!sel) return root;
@@ -266,7 +266,7 @@ export default class Iniciativas extends View {
   // Al pie: decisiones que esperan (lleva a su pestaña), lo listo hoy o ya en producción, y los riesgos.
   gantt(p, t, color) {
     const g = gantt(p, this.medidas || []);
-    const revisado = div().pb(4).text_size(11).text_color(t.dim).child(`Revisado a las ${hhmm(ahora(this.leido, 0, 24) ?? 0)}`);
+    const revisado = div().pb(6).text_size(11).text_color(t.dim).child(`Revisado a las ${hhmm(ahora(this.leido, 0, 24) ?? 0)}`);
     if (!g.grupos.length) return [revisado, div().py(6).text_size(12).text_color(t.dim).child(SIN_PLAN), ...this.pie(p, g, t)];
     const ancho = this.ancho >= 620, NARANJA = "#f97316", P = (h) => `${pos(h, g.h0, g.h1)}%`;
     const EQUIPO = { AI: t.ansi6, Backend: t.ansi3, Frontend: t.ansi2, Acciones: t.ansi5, DevOps: t.ansi4, TPM: t.muted };
@@ -292,9 +292,9 @@ export default class Iniciativas extends View {
       .when(Boolean(f.quien), (e) => e.child(div().flex_none().text_size(10).font_semibold().text_color(EQUIPO[f.quien] || t.muted).child(f.quien.toUpperCase())))
       .child(div().flex_none().px(6).rounded(8).bg(color[tonoChip(f)]).text_size(10.5).text_color(t.background).child(chip(f)))
       .child(div().flex_none().text_size(10.5).text_color(f.link ? t.accent : t.dim).child(f.enlace || "sin enlace"));
-    const nombre = (f) => div().text_size(12.5).font_medium().text_color(f.hecha ? t.muted : t.foreground).truncate().child(f.titulo);
+    const nombre = (f) => div().text_size(12.5).line_height("17px").font_medium().text_color(f.hecha ? t.muted : t.foreground).child(f.titulo);
     const nota = (f) => div().text_size(11).text_color(t.dim).truncate().child(f.nota);
-    const out = [revisado, eje];
+    const out = [revisado, this.leyenda(t, color, NARANJA), eje];
     g.grupos.forEach((x, i) => {
       out.push(div().pt(10).pb(3).text_size(10.5).font_semibold().text_color(t.muted).child(x.titulo.toUpperCase()));
       x.filas.forEach((f, j) => {
@@ -308,9 +308,27 @@ export default class Iniciativas extends View {
     return [...out, ...this.pie(p, g, t)];
   }
 
-  // El pie del Gantt, como el del artefacto: las decisiones que te esperan (un clic abre su pestaña) y dos tarjetas.
+  // La leyenda, arriba del eje como en el artefacto: los chips y qué es cada barra. Lo estimado va punteado y no rayado:
+  // gpui solo raya trazos de un lienzo (Background.pattern_slash), no el fondo de un div.
+  leyenda(t, color, NARANJA) {
+    const chipL = ([c, tono, dice]) => h_flex().gap(4).items_center()
+      .child(div().px(6).rounded(8).bg(color[tono]).text_size(10.5).text_color(t.background).child(c))
+      .when(Boolean(dice), (e) => e.child(div().text_size(11).text_color(t.dim).child(dice)));
+    const barraL = (texto, el) => h_flex().gap(5).items_center().child(el.w(22).h(10).rounded(3)).child(div().text_size(11).text_color(t.dim).child(texto));
+    return v_flex().pb(8).gap(5)
+      .child(h_flex().flex_wrap().gap_x(12).gap_y(4).children(LEYENDA.map(chipL))
+        .child(div().text_size(11).text_color(t.dim).child("sin ritmo, su estado")))
+      .child(h_flex().flex_wrap().gap_x(12).gap_y(4)
+        .child(barraL("medida o escrita", div().bg(color.curso).opacity(0.92)))
+        .child(barraL("estimada", div().border_1().border_dashed().border_color(color.curso).bg(t.hover)))
+        .child(barraL("terminada", div().bg(color.hecha).opacity(0.45)))
+        .child(barraL("ahora", div().w(2).bg(NARANJA))));
+  }
+
+  // El pie del Gantt, como el del artefacto: dos tarjetas (lo listo o ya en producción, y los riesgos) y las decisiones
+  // que esperan, que se responden aquí mismo con las tarjetas de la pestaña Decisiones (el mismo this.decisiones).
   pie(p, g, t) {
-    const { produccion, riesgos, decisiones } = pie(p, g);
+    const { produccion, riesgos } = pie(p, g);
     const tarjeta = (titulo, items, vacio) => v_flex().flex_1().min_w(0).p(12).gap(6).rounded(9).border_1().border_color(t.border)
       .child(div().text_size(12.5).font_semibold().child(titulo))
       .children(items.length ? items.map((x) => h_flex().gap(6).items_start().text_size(11.5).text_color(t.foreground)
@@ -319,11 +337,9 @@ export default class Iniciativas extends View {
     const tarjetas = [tarjeta(produccion.titulo, produccion.items, produccion.titulo === "Listo hoy" ? "Nada terminado hoy todavía." : "—"),
       tarjeta("Riesgos", riesgos, "Sin riesgos a la vista: nada bloqueado, en riesgo ni atrasado.")];
     return [
-      div().id(`decisiones-${p.archivo}`).mt(12).h(32).px(12).flex().items_center().rounded(8).border_1()
-        .border_color(decisiones ? t.blocked : t.border).text_size(12.5).text_color(decisiones ? t.blocked : t.muted)
-        .cursor_pointer().hover((s) => s.bg(t.hover)).on_click((_e, cx) => { this.vista = "decisiones"; cx.notify(); })
-        .child(decisiones ? `${decisiones === 1 ? "1 decisión te espera" : `${decisiones} decisiones te esperan`} · ver Decisiones →` : "Ninguna decisión te espera · ver Decisiones →"),
-      (this.ancho >= 620 ? h_flex().items_start() : v_flex()).mt(8).mb(6).gap(8).children(tarjetas),
+      (this.ancho >= 620 ? h_flex().items_start() : v_flex()).mt(12).gap(8).children(tarjetas),
+      div().pt(14).pb(6).text_size(13).font_semibold().child("Decisiones que esperan por ti"),
+      ...this.decisiones(p, t),
     ];
   }
 }

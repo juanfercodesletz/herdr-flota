@@ -177,10 +177,12 @@ Dos pestañas más en el mismo panel, junto a Iniciativas (en la app y en la web
   mismo alto; lo `merged` solo se cuenta. Clic en una tarjeta → su link. Angosto (el teléfono), una columna debajo de otra.
 - **Gantt:** el día como lo pide la skill `gantt-flota`, sin que nadie escriba horas: una fila por tarea de hoy, con
   quién la hace (`equipo`, o el asiento de su agente: «claude opus»), un chip de una palabra, su enlace (ClickUp o el PR),
-  el nombre, una nota de una línea y sus barras sobre las 06:00–21:00 de Bogotá (de noche el eje se estira hasta la hora
-  actual). Rayas en las salidas de 07, 12 y 19, la hora actual en naranja y «Revisado HH:MM». Barra sólida = medida o
-  escrita, rayada (en el escritorio, punteada) = estimada, tenue = ya terminada. En el teléfono la barra va debajo del
-  nombre. Al pie: cuántas decisiones esperan (lleva a su pestaña), «Listo hoy» o «Ya en producción», y «Riesgos».
+  el nombre entero (en varias líneas si es largo), una nota de una línea y sus barras sobre las 06:00–21:00 de Bogotá (de
+  noche el eje se estira hasta la hora actual). Arriba, «Revisado HH:MM» y la leyenda de chips y barras. Rayas en las
+  salidas de 07, 12 y 19 y la hora actual en naranja. Barra sólida = medida o escrita, rayada (en el escritorio,
+  punteada: gpui no raya fondos) = estimada, tenue = ya terminada. En el teléfono la barra va debajo del nombre. Al pie:
+  «Listo hoy» o «Ya en producción», «Riesgos», y «Decisiones que esperan por ti», que se responden ahí mismo con las
+  mismas tarjetas y el mismo guardado de la pestaña Decisiones.
 
 **De dónde salen las horas.** De herdr-task: cada tarea de `~/.herdr/tasks/<carpeta>.json` trae `started` (arrancó su
 agente), `ready_at` (quedó lista), `done_at` (se aceptó y mergeó) y, mientras corre, lo que dijo que le falta

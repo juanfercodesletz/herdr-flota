@@ -1,7 +1,7 @@
 // node shell/prueba-iniciativas.mjs: el lector de ~/.herdr/flota/<producto>.json con el ejemplo y con archivos malos.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { leer, avance, tono, tablero, gantt, pie, pos, hhmm, ahora, chip, tonoChip, ordenar, esperan, abiertas, cuantas, delEspacio, esHome, SIN_INICIATIVAS } from "../mods/flota-iniciativas/iniciativas.js";
+import { leer, avance, tono, tablero, gantt, pie, pos, hhmm, LEYENDA, ahora, chip, tonoChip, ordenar, esperan, abiertas, cuantas, delEspacio, esHome, SIN_INICIATIVAS } from "../mods/flota-iniciativas/iniciativas.js";
 
 const ej = leer("veta.json", readFileSync(new URL("../ejemplos/veta.json", import.meta.url), "utf8"));
 assert.equal(ej.error, undefined);
@@ -114,6 +114,9 @@ const conPie = leer("p.json", JSON.stringify({ producto: "P", produccion: ["Rele
 assert.deepEqual(pie(conPie, gantt(conPie)), { produccion: { titulo: "Ya en producción", items: ["Release 1.217.0"] }, riesgos: ["R019 atrasado"], decisiones: 0 });
 assert.deepEqual(pie({ ...conPie, riesgos: [] }, gantt(conPie)).riesgos, ["Frenada: espera a Charlie"]);
 assert.equal(hhmm(-0.5), "ayer 23:30");
+// La leyenda: los cinco chips del artefacto, cada uno con el tono que le da tonoChip.
+assert.deepEqual(LEYENDA.map(([c]) => c), ["listo", "a tiempo", "en riesgo", "atrasado", "te espera"]);
+assert.ok(LEYENDA.every(([c, t]) => tonoChip({ ritmo: c }) === t));
 // Hora de Bogotá: 2026-11-04 19:30 UTC son las 14:30 allá; a las 03:00 queda fuera del eje.
 assert.equal(ahora(Date.UTC(2026, 10, 4, 19, 30) / 1000), 14.5);
 assert.equal(ahora(Date.UTC(2026, 10, 4, 8, 0) / 1000), null);

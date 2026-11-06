@@ -161,6 +161,9 @@ export function hhmm(h) {
 const RITMOS = { "listo": "hecha", "a tiempo": "curso", "en riesgo": "riesgo", "atrasado": "bloqueada", "te espera": "espera" };
 export const chip = (t) => t.ritmo || (t.hecha || t.estado === "merged" ? "listo" : t.espera || t.estado === "PR abierto" ? "te espera" : t.estado);
 export const tonoChip = (t) => RITMOS[chip(t)] || tono(t.estado);
+// La leyenda de los chips, como en el artefacto: [chip, tono, qué quiere decir].
+const DICE = { "listo": "terminada", "en riesgo": "puede correrse", "te espera": "necesita tu visto bueno" };
+export const LEYENDA = Object.entries(RITMOS).map(([c, t]) => [c, t, DICE[c] || ""]);
 
 // Qué tarea de herdr-task es esta: su `ref` (HF-17) igual al `id`; si no, dentro de los espacios del producto, el
 // terminal de `sesion`, el PR de `link` o el código del título («E4.1 · …», como los nombra el TPM de Letz).
