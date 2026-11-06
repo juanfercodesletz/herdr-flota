@@ -9,7 +9,7 @@ este archivo es el único que escribe ahí, y el TPM solo lo lee en su tick. For
   respuestas.py servir [puerto] [carpeta]                    la web: sirve la foto de /flota y recibe POST /respuesta
 """
 import fcntl, json, os, re, shutil, subprocess, sys, time
-from http.server import HTTPServer, SimpleHTTPRequestHandler
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 FLOTA = os.path.expanduser("~/.herdr/flota")
 ARCHIVO = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,80}\.json$")
@@ -68,6 +68,23 @@ def dueño():
 
 
 class Web(SimpleHTTPRequestHandler):
+    # Keep-alive: el proxy de tailscale serve reusa la conexión en vez de abrir una por pedido (cada una cerrada deja un
+    # socket en TIME_WAIT 30 s; un cliente en bucle agotaba los puertos efímeros del Mac). timeout cierra las ociosas.
+    protocol_version = "HTTP/1.1"
+    timeout = 30
+    servido = {}  # ruta → cuándo se sirvió por última vez
+
+    def do_GET(self):
+        # Freno a un cliente en bucle: la misma foto .json otra vez antes de 1 s → 429. Las pestañas se leen cada 15 s;
+        # un chip viejo (antes de HF-17) pedía ~360 por segundo y con dos errores seguidos deja de pedir.
+        # ponytail: global por ruta; dos pestañas en el mismo segundo → una se queda sin foto hasta su próxima lectura.
+        ruta, ahora = self.path.split("?")[0], time.monotonic()
+        if ruta.endswith(".json"):
+            if ahora - self.servido.get(ruta, -9) < 1:
+                return self.responder(429, {"error": "muy seguido"})
+            self.servido[ruta] = ahora
+        super().do_GET()
+
     # Escribir pide lo mismo que la web de Shepherdr (service/auth.ts): una cabecera que un formulario o un link no
     # pueden mandar, el origen de la propia página y, por el tailnet, el login del dueño. Leer queda como antes.
     def do_POST(self):
@@ -123,7 +140,7 @@ if __name__ == "__main__":
         puerto = int(a[1]) if len(a) > 1 else 7790
         carpeta = a[2] if len(a) > 2 else os.path.join(FLOTA, "web")
         os.makedirs(carpeta, exist_ok=True)
-        # ponytail: un hilo, así las escrituras van de a una; basta para un humano tocando botones.
-        HTTPServer(("127.0.0.1", puerto), lambda *x: Web(*x, directory=carpeta)).serve_forever()
+        # Un hilo por conexión (keep-alive dejaría esperando a las demás); guardar() ya va de a una con flock.
+        ThreadingHTTPServer(("127.0.0.1", puerto), lambda *x: Web(*x, directory=carpeta)).serve_forever()
     else:
         sys.exit(__doc__)
