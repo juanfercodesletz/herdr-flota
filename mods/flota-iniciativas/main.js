@@ -11,7 +11,7 @@
 import { View, div, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { exec, home, appHome, theme, layout, run, props, spaces } from "herdr";
-import { leer, avance, esperan, ordenar, tono, hace, SIN_ARCHIVO, tablero, gantt, pie, hhmm, chip, tonoChip, LEYENDA, pos, ahora, SALIDAS, SIN_PLAN, abiertas, cuantas, delEspacio, esHome, SIN_INICIATIVAS } from "./iniciativas.js";
+import { leer, avance, esperan, ordenar, tono, hace, SIN_ARCHIVO, tablero, gantt, pie, rotulos, hhmm, chip, tonoChip, LEYENDA, pos, ahora, SALIDAS, SIN_PLAN, abiertas, cuantas, delEspacio, esHome, SIN_INICIATIVAS } from "./iniciativas.js";
 
 const VISTAS = [["iniciativas", "Iniciativas"], ["tablero", "Tablero"], ["gantt", "Gantt"], ["decisiones", "Decisiones"]];
 
@@ -284,7 +284,7 @@ export default class Iniciativas extends View {
     const eje = h_flex().h(18).when(ancho, (e) => e.child(div().w(IZQ).flex_none()))
       .child(div().relative().flex_1().h_full()
         // Sin la hora rotulada que quedaría debajo del rótulo de ahora.
-        .children(g.marcas.filter((h) => g.ya == null || Math.abs(h - g.ya) > (g.h1 - g.h0) * 0.07).map((h) => div().absolute().left(P(h)).ml(-15).w(30).text_size(10).text_color(SALIDAS.includes(h) ? t.muted : t.dim).child(`${String(h % 24).padStart(2, "0")}:00`)))
+        .children(rotulos(g, 74 / Math.max(200, (ancho ? this.ancho - IZQ : this.ancho) - 28)).map((h) => div().absolute().left(P(h)).ml(-15).w(30).text_size(10).text_color(SALIDAS.includes(h) ? t.muted : t.dim).child(`${String(h % 24).padStart(2, "0")}:00`)))
         // Pasada la mitad, el rótulo de ahora va a la izquierda de su raya, para no salirse por el borde.
         .when(g.ya != null, (el) => el.child(div().absolute().left(P(g.ya)).w(66).ml(g.ya > (g.h0 + g.h1) / 2 ? -70 : 4).flex()
           .when(g.ya > (g.h0 + g.h1) / 2, (e) => e.justify_end())

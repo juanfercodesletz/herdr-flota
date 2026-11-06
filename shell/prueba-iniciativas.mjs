@@ -1,7 +1,7 @@
 // node shell/prueba-iniciativas.mjs: el lector de ~/.herdr/flota/<producto>.json con el ejemplo y con archivos malos.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { leer, avance, tono, tablero, gantt, pie, pos, hhmm, LEYENDA, ahora, chip, tonoChip, ordenar, esperan, abiertas, cuantas, delEspacio, esHome, SIN_INICIATIVAS } from "../mods/flota-iniciativas/iniciativas.js";
+import { leer, avance, tono, tablero, gantt, pie, pos, hhmm, LEYENDA, rotulos, ahora, chip, tonoChip, ordenar, esperan, abiertas, cuantas, delEspacio, esHome, SIN_INICIATIVAS } from "../mods/flota-iniciativas/iniciativas.js";
 
 const ej = leer("veta.json", readFileSync(new URL("../ejemplos/veta.json", import.meta.url), "utf8"));
 assert.equal(ej.error, undefined);
@@ -117,6 +117,9 @@ assert.ok(Math.abs(deR("HF-3").barras[0].x + deR("HF-3").barras[0].w - pos(r.ya,
 const noche = gantt(hf, medidas, B(22, 13) / 1000);
 assert.deepEqual([noche.h1, noche.ya.toFixed(2), noche.marcas.at(-1)], [24, "22.22", 24]);
 assert.deepEqual(gantt(hf, medidas, B(21, 30) / 1000).marcas.at(-1), 22); // estirado, termina en una marca
+// Los rótulos de hora no chocan con el de ahora: a las 22:13 (a la izquierda de su raya), sin las 21.
+assert.deepEqual(rotulos(noche, 0.12), [6, 9, 12, 15, 18, 24]);
+assert.deepEqual(rotulos(gantt(hf, medidas, B(8) / 1000), 0.12), [6, 12, 14, 16, 18, 20]); // a las 08:00, a la derecha: sin las 8 ni las 10
 // El pie: lo listo hoy (o `produccion` del TPM), los riesgos (o `riesgos`) y las decisiones que esperan.
 assert.deepEqual(pie(hf, m), { produccion: { titulo: "Listo hoy", items: ["Escrita · terminada a las 12:00", "Por PR · PR #4 · mergeada a las 09:30", "Chip · PR #17 · mergeada a las 17:28", "Entorno · terminada a las 17:24"] }, riesgos: [], decisiones: 0 });
 const conPie = leer("p.json", JSON.stringify({ producto: "P", produccion: ["Release 1.217.0"], riesgos: "R019 atrasado", sueltas: [S("a", "Frenada", "bloqueada", { nota: "espera a Charlie" })] }));

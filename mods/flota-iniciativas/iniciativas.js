@@ -248,6 +248,14 @@ export function gantt(p, medidas = [], now = Date.now() / 1000) {
   };
 }
 
+// Las horas que se rotulan sin chocar con el rótulo de ahora, que ocupa `ancho` (en fracción del eje) a la izquierda de
+// su raya si ya pasó la mitad, o a la derecha si no.
+export function rotulos(g, ancho) {
+  if (g.ya == null) return g.marcas;
+  const r = (g.h1 - g.h0) * ancho, izq = g.ya > (g.h0 + g.h1) / 2, de = izq ? g.ya - r : g.ya, a = izq ? g.ya : g.ya + r;
+  return g.marcas.filter((h) => h < de - (g.h1 - g.h0) * 0.03 || h > a + (g.h1 - g.h0) * 0.03);
+}
+
 // El pie del Gantt: lo que ya salió (`produccion` del TPM o, sin ella, lo que quedó listo hoy), los riesgos (`riesgos`
 // del TPM o, sin ellos, lo bloqueado, en riesgo o atrasado) y cuántas decisiones esperan a Juan.
 export function pie(p, g) {
