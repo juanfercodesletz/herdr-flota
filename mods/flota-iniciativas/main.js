@@ -9,9 +9,9 @@
 // Muestra los productos del espacio abierto (su id en el campo `espacios`); Home, todos. Cambia con el espacio, sin esperar
 // la siguiente lectura: spaces() hace que el mod se vuelva a dibujar.
 import { View, div, svg } from "gpui-kit";
-import { h_flex, v_flex } from "gpui-base";
+import { h_flex, v_flex, InputState, Input } from "gpui-base";
 import { exec, home, appHome, theme, layout, run, props, spaces } from "herdr";
-import { leer, avance, esperan, ordenar, tono, hace, SIN_ARCHIVO, tablero, gantt, pie, rotulos, hhmm, chip, tonoChip, LEYENDA, pos, ahora, SALIDAS, SIN_PLAN, abiertas, cuantas, delEspacio, esHome, SIN_INICIATIVAS } from "./iniciativas.js";
+import { leer, avance, esperan, ordenar, tono, hace, SIN_ARCHIVO, tablero, gantt, pie, rotulos, hhmm, chip, tonoChip, LEYENDA, explicacion, dicha, pos, ahora, SALIDAS, SIN_PLAN, abiertas, cuantas, delEspacio, esHome, SIN_INICIATIVAS } from "./iniciativas.js";
 
 const VISTAS = [["iniciativas", "Iniciativas"], ["tablero", "Tablero"], ["gantt", "Gantt"], ["decisiones", "Decisiones"]];
 
@@ -47,7 +47,7 @@ for f in glob.glob(os.path.expanduser("~/.herdr/tasks/*.json")):
             "space": t.get("space"), "asiento": " ".join(x for x in (ag[-1].get("agent") if ag else "", modelo) if x),
             "agentes": [a["address"] for a in ag if a.get("address")], "started": t["started"], "ready_at": t.get("ready_at"),
             "done_at": t.get("done_at"), "fin": fin, "pr": (t.get("pr") or {}).get("url") or "",
-            "progreso": {"texto": p.get("text") or "", "at": p.get("at"), "left": p.get("left")} if p else None})
+            "progreso": {"texto": p.get("text") or "", "at": p.get("at"), "left": p.get("left"), "paused_at": p.get("paused_at")} if p else None})
 print(json.dumps({"archivos": out, "medidas": med}))
 `;
 
@@ -73,10 +73,31 @@ export default class Iniciativas extends View {
       this.medidas = medidas;
     } catch { this.productos = [{ archivo: "", error: "No se pudo leer ~/.herdr/flota" }]; this.medidas = []; }
     this.leido = Math.floor(Date.now() / 1000);
+    this.entradasDe(this.productos);
     // La web de Shepherdr dibuja lo mismo desde esta foto (web/flota-iniciativas, servida en /flota).
     const foto = JSON.stringify({ at: this.leido, productos: this.productos, medidas: this.medidas });
     exec("sh", ["-c", 'mkdir -p "${1%/*}" && printf %s "$2" > "$1.$$" && mv "$1.$$" "$1"', "sh", home() + "/.herdr/flota/web/iniciativas.json", foto]).catch(() => {});
     cx.notify();
+  }
+
+  // Un campo de texto por decisión, para responder con sus palabras: gpui pide crearlo fuera de render, así que se crea
+  // al leer y se guarda por "<archivo>#<id>". Enter o Enviar lo guardan con la opción que ya tenga.
+  entradasDe(productos) {
+    this.entradas ??= {};
+    for (const p of productos) for (const d of p.error ? [] : p.decisiones) {
+      const k = `${p.archivo}#${d.id}`;
+      if (this.entradas[k] || d.estado === "cerrada") continue;
+      try {
+        const st = InputState.new({ placeholder: "Escribe tu respuesta o un matiz", value: d.texto });
+        st.on("submit", (_e, cx) => this.enviar(p.archivo, d.id, cx));
+        this.entradas[k] = st;
+      } catch { /* sin campo, quedan las opciones */ }
+    }
+  }
+
+  enviar(archivo, id, cx) {
+    const d = this.productos?.find((p) => p.archivo === archivo)?.decisiones?.find((x) => x.id === id);
+    this.responder(archivo, id, d?.respuesta || "", cx, this.entradas?.[`${archivo}#${id}`]?.value() ?? "");
   }
 
   render() {
@@ -226,7 +247,7 @@ export default class Iniciativas extends View {
     const out = [div().pb(4).text_size(11.5).text_color(t.muted).child(`${cuantas(abiertas(p))} · el TPM recoge las respondidas en su siguiente tick`)];
     if (this.aviso) out.push(div().pb(4).text_size(12).text_color(t.blocked).child(this.aviso));
     p.decisiones.forEach((d, i) => {
-      const cerrada = d.estado === "cerrada", abierta = d.estado === "abierta";
+      const cerrada = d.estado === "cerrada", abierta = d.estado === "abierta", entrada = this.entradas?.[`${p.archivo}#${d.id}`];
       const sub = [d.de && `pregunta ${d.de}`, d.tarea, d.contexto].filter(Boolean).join(" · ");
       out.push(v_flex().id(`decision-${p.archivo}-${i}`).mb(8).p(12).gap(8).rounded(9).bg(t.background).border_1()
         .border_color(abierta && d.frena ? t.blocked : t.border).when(cerrada, (e) => e.opacity(0.6))
@@ -242,18 +263,24 @@ export default class Iniciativas extends View {
             return div().id(`opcion-${p.archivo}-${i}-${j}`).h(30).px(12).flex().items_center().rounded(7).text_size(12.5)
               .bg(on ? t.foreground : t.background).text_color(on ? t.background : t.foreground).border_1().border_color(on ? t.foreground : t.border)
               .cursor_pointer().hover((s) => s.bg(on ? t.foreground : t.hover))
-              .on_click((_e, cx) => this.responder(p.archivo, d.id, o, cx))
+              .on_click((_e, cx) => this.responder(p.archivo, d.id, o, cx, entrada?.value() ?? d.texto))
               .child(o === d.recomendada ? `${o} ★` : o);
           }))
-          : div().text_size(12).text_color(t.muted).child(cerrada ? `Respuesta: ${d.respuesta || "—"}` : "Sin opciones: respóndela en el Gantt"))
-        .when(d.estado === "respondida", (e) => e.child(div().text_size(11.5).text_color(t.ansi2).child(`Tu respuesta: ${d.respuesta} · el TPM la recoge en su siguiente tick`))));
+          : cerrada ? div().text_size(12).text_color(t.muted).child(`Respuesta: ${dicha(d) || "—"}`) : div())
+        // Con sus palabras, como en el artefacto: sola o junto a la opción elegida.
+        .when(Boolean(entrada) && !cerrada, (e) => e.child(h_flex().gap(6).items_center()
+          .child(div().id(`texto-${p.archivo}-${i}`).flex_1().min_w(0).h(30).px(10).flex().items_center().rounded(7).border_1().border_color(t.border)
+            .cursor_text().on_mouse_down("left", (_e, cx) => cx.stop_propagation()).child(Input.new(entrada).h_full().text_size(12).text_color(t.foreground)))
+          .child(div().id(`enviar-${p.archivo}-${i}`).h(30).px(12).flex().items_center().rounded(7).bg(t.foreground).text_color(t.background).text_size(12.5)
+            .cursor_pointer().on_click((_e, cx) => this.enviar(p.archivo, d.id, cx)).child(d.estado === "respondida" ? "Cambiar" : "Enviar"))))
+        .when(d.estado === "respondida", (e) => e.child(div().text_size(11.5).text_color(t.ansi2).child(`Tu respuesta: ${dicha(d)} · el TPM la recoge en su siguiente tick`))));
     });
     return out;
   }
 
-  responder(archivo, id, respuesta, cx) {
+  responder(archivo, id, respuesta, cx, texto = "") {
     cx.spawn(async (cx) => {
-      const r = await exec("python3", [`${appHome()}/mods/flota-iniciativas/respuestas.py`, "guardar", archivo, id, respuesta, "app"]).catch((e) => ({ code: 1, stderr: String(e) }));
+      const r = await exec("python3", [`${appHome()}/mods/flota-iniciativas/respuestas.py`, "guardar", archivo, id, respuesta, "app", texto]).catch((e) => ({ code: 1, stderr: String(e) }));
       this.aviso = r.code ? (r.stderr || "No se guardó la respuesta").trim().split("\n").pop() : "";
       await this.leerTodo(cx);
     });
@@ -275,10 +302,12 @@ export default class Iniciativas extends View {
       .children(g.marcas.map((h) => div().absolute().left(P(h)).top(0).bottom(0).w(1).bg(t.border).opacity(0.5)))
       .children(SALIDAS.filter((h) => h > g.h0 && h < g.h1).map((h) => div().absolute().left(P(h)).top(0).bottom(0).w(1).bg(t.muted).opacity(0.6)))
       .children(f.barras.map((b) => {
-        const c = color[b.tono || tonoChip(f)];
-        const el = div().absolute().left(`${b.x}%`).w(`${b.w}%`).top(ancho ? 16 : 1).h(18).rounded(4).px(5).flex().items_center().overflow_hidden()
-          .child(div().text_size(10.5).font_medium().truncate().text_color(b.estimada ? c : t.background).child(b.texto));
-        return b.estimada ? el.border_1().border_dashed().border_color(c).bg(t.hover) : el.bg(c).opacity(b.hecha ? 0.45 : 0.92);
+        // Del color del equipo si lo tiene (si no, del estado); la espera a Juan, del suyo. Lo estimado: punteado y claro.
+        const c = b.tono ? color[b.tono] : EQUIPO[f.equipo] || color[tonoChip(f)];
+        const el = div().absolute().left(`${b.x}%`).w(`${b.w}%`).top(ancho ? 16 : 1).h(18).rounded(4).px(5).flex().items_center().overflow_hidden();
+        const texto = div().text_size(10.5).font_medium().truncate().text_color(b.estimada ? t.foreground : t.background).child(b.texto);
+        return b.estimada ? el.border_1().border_dashed().border_color(c).child(div().absolute().inset_0().bg(c).opacity(0.28)).child(texto)
+          : el.bg(c).opacity(b.hecha ? 0.45 : 0.92).child(texto);
       }))
       .when(g.ya != null, (el) => el.child(div().absolute().left(P(g.ya)).top(0).bottom(0).w(2).bg(NARANJA)));
     const eje = h_flex().h(18).when(ancho, (e) => e.child(div().w(IZQ).flex_none()))
@@ -295,7 +324,8 @@ export default class Iniciativas extends View {
       .child(div().flex_none().text_size(10.5).text_color(f.link ? t.accent : t.dim).child(f.enlace || "sin enlace"));
     const nombre = (f) => div().text_size(12.5).line_height("17px").font_medium().text_color(f.hecha ? t.muted : t.foreground).child(f.titulo);
     const nota = (f) => div().text_size(11).text_color(t.dim).truncate().child(f.nota);
-    const out = [revisado, this.leyenda(t, color, NARANJA), eje];
+    const equipos = [...new Set(g.grupos.flatMap((x) => x.filas).map((f) => f.equipo))].filter((e) => EQUIPO[e]);
+    const out = [div().pb(6).text_size(11.5).line_height("16px").text_color(t.muted).child(explicacion("punteada y clara")), revisado, this.leyenda(t, color, NARANJA, equipos.map((e) => [e, EQUIPO[e]])), eje];
     g.grupos.forEach((x, i) => {
       out.push(div().pt(10).pb(3).text_size(10.5).font_semibold().text_color(t.muted).child(x.titulo.toUpperCase()));
       x.filas.forEach((f, j) => {
@@ -311,17 +341,19 @@ export default class Iniciativas extends View {
 
   // La leyenda, arriba del eje como en el artefacto: los chips y qué es cada barra. Lo estimado va punteado y no rayado:
   // gpui solo raya trazos de un lienzo (Background.pattern_slash), no el fondo de un div.
-  leyenda(t, color, NARANJA) {
+  leyenda(t, color, NARANJA, equipos) {
     const chipL = ([c, tono, dice]) => h_flex().gap(4).items_center()
       .child(div().px(6).rounded(8).bg(color[tono]).text_size(10.5).text_color(t.background).child(c))
       .when(Boolean(dice), (e) => e.child(div().text_size(11).text_color(t.dim).child(dice)));
     const barraL = (texto, el, w = 22) => h_flex().gap(5).items_center().child(el.w(w).h(10).rounded(3)).child(div().text_size(11).text_color(t.dim).child(texto));
     return v_flex().pb(8).gap(5)
+      .when(equipos.length > 0, (e) => e.child(h_flex().flex_wrap().gap_x(12).gap_y(4).children(equipos.map(([n, c]) =>
+        h_flex().gap(5).items_center().child(div().size(10).rounded(3).bg(c)).child(div().text_size(11).text_color(t.dim).child(n))))))
       .child(h_flex().flex_wrap().gap_x(12).gap_y(4).children(LEYENDA.map(chipL))
         .child(div().text_size(11).text_color(t.dim).child("sin ritmo, su estado")))
       .child(h_flex().flex_wrap().gap_x(12).gap_y(4)
         .child(barraL("medida o escrita", div().bg(color.curso).opacity(0.92)))
-        .child(barraL("estimada", div().border_1().border_dashed().border_color(color.curso).bg(t.hover)))
+        .child(barraL("estimada", div().relative().border_1().border_dashed().border_color(color.curso).child(div().absolute().inset_0().bg(color.curso).opacity(0.28))))
         .child(barraL("terminada", div().bg(color.hecha).opacity(0.45)))
         .child(barraL("ahora", div().bg(NARANJA), 2)));
   }

@@ -1,7 +1,7 @@
 // node shell/prueba-iniciativas.mjs: el lector de ~/.herdr/flota/<producto>.json con el ejemplo y con archivos malos.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { leer, avance, tono, tablero, gantt, pie, pos, hhmm, LEYENDA, rotulos, ahora, chip, tonoChip, ordenar, esperan, abiertas, cuantas, delEspacio, esHome, SIN_INICIATIVAS } from "../mods/flota-iniciativas/iniciativas.js";
+import { leer, avance, tono, tablero, gantt, pie, pos, hhmm, LEYENDA, rotulos, dicha, explicacion, ahora, chip, tonoChip, ordenar, esperan, abiertas, cuantas, delEspacio, esHome, SIN_INICIATIVAS } from "../mods/flota-iniciativas/iniciativas.js";
 
 const ej = leer("veta.json", readFileSync(new URL("../ejemplos/veta.json", import.meta.url), "utf8"));
 assert.equal(ej.error, undefined);
@@ -113,6 +113,15 @@ const r = gantt(sola, otras, B(17) / 1000), deR = (id) => r.grupos[0].filas.find
 assert.deepEqual([deR("HF-1").barras.map((b) => b.texto), deR("HF-1").enlace, deR("HF-1").hecha], [["09:00–10:00"], "PR #1", true]);
 assert.deepEqual([r.h0, deR("x").barras[0].texto, deR("x").barras[0].x], [2, "02:00–03:00", 0]);
 assert.ok(Math.abs(deR("HF-3").barras[0].x + deR("HF-3").barras[0].w - pos(r.ya, r.h0, r.h1)) < 1e-9);
+// Segunda revisión: lo que cruza la medianoche se ve desde las 00:00; lo estimado en pausa (espera a Juan) se cuenta desde
+// ahora; una barra recién empezada en el borde izquierdo no pasa de la raya de ahora.
+const cruza = gantt(sola, [M({ ref: "HF-1", started: B(23) - 86400000, ready_at: B(3), done_at: B(3) })], B(17) / 1000);
+assert.deepEqual([cruza.h0, cruza.grupos[0].filas[0].barras[0].x, cruza.grupos[0].filas[0].barras[0].texto], [0, 0, "ayer 23:00–03:00"]);
+const pausa = gantt(sola, [M({ ref: "HF-3", estado: "running", started: B(9), progreso: { texto: "", at: B(10), left: 3600000, paused_at: B(10, 5) } })], B(12) / 1000);
+assert.deepEqual(pausa.grupos[0].filas[0].barras.map((b) => b.texto), ["09:00–12:00", "falta ~55 min"]);
+const borde = gantt(sola, [M({ ref: "HF-3", estado: "running", started: B(6) })], B(6, 1) / 1000), bb = borde.grupos[0].filas[0].barras[0];
+assert.ok(bb.x === 0 && Math.abs(bb.w - pos(borde.ya, borde.h0, borde.h1)) < 1e-9);
+assert.match(explicacion("rayada"), /rayada: lo que dice que le falta/);
 // De noche el eje se estira hasta la hora actual (y lo estimado), sin pasar de las 24.
 const noche = gantt(hf, medidas, B(22, 13) / 1000);
 assert.deepEqual([noche.h1, noche.ya.toFixed(2), noche.marcas.at(-1)], [24, "22.22", 24]);
@@ -133,6 +142,11 @@ assert.ok(LEYENDA.every(([c, t]) => tonoChip({ ritmo: c }) === t));
 assert.equal(ahora(Date.UTC(2026, 10, 4, 19, 30) / 1000), 14.5);
 assert.equal(ahora(Date.UTC(2026, 10, 4, 8, 0) / 1000), null);
 
+// Texto libre: con una opción, solo (respuesta ""), o vacío (no cuenta); dicha() lo junta en una línea.
+const libre = (m) => leer("x.json", JSON.stringify({ producto: "P", decisiones: [{ id: "a", pregunta: "¿?", opciones: ["Sí", "No"] }] }), JSON.stringify({ a: m })).decisiones[0];
+assert.deepEqual([libre({ respuesta: "Sí", texto: "pero mañana" }).estado, dicha(libre({ respuesta: "Sí", texto: "pero mañana" }))], ["respondida", "Sí — pero mañana"]);
+assert.deepEqual([libre({ respuesta: "", texto: " ninguna " }).estado, dicha(libre({ respuesta: "", texto: " ninguna " }))], ["respondida", "ninguna"]);
+assert.equal(libre({ respuesta: "", texto: "  " }).estado, "abierta");
 // Decisiones: abiertas primero (las que frenan antes), luego respondidas y cerradas; la respuesta dada en Herdr encima.
 assert.deepEqual(ej.decisiones.map((d) => [d.id, d.estado]), [["D9", "abierta"], ["D7", "abierta"], ["D5", "respondida"]]);
 assert.equal(abiertas(ej), 2);
@@ -145,7 +159,7 @@ assert.equal(leer("veta.json", veta, "{ roto").decisiones.length, 3); // respues
 const D = (x) => leer("x.json", JSON.stringify({ producto: "P", decisiones: x }));
 assert.match(D({}).error, /"decisiones" va como lista/);
 assert.match(D([{ id: "D1" }]).error, /sin "id" o sin "pregunta" \(D1\)/);
-assert.deepEqual(D([{ id: 3, pregunta: "¿?", estado: "raro" }]).decisiones[0], { id: "3", pregunta: "¿?", opciones: [], recomendada: "", contexto: "", de: "", tarea: "", frena: false, estado: "abierta", respuesta: "" });
+assert.deepEqual(D([{ id: 3, pregunta: "¿?", estado: "raro" }]).decisiones[0], { id: "3", pregunta: "¿?", opciones: [], recomendada: "", contexto: "", de: "", tarea: "", frena: false, estado: "abierta", respuesta: "", texto: "" });
 // Una cerrada no cambia con lo de Herdr.
 assert.equal(leer("x.json", JSON.stringify({ producto: "P", decisiones: [{ id: "a", pregunta: "¿?", opciones: ["Sí", "No"], estado: "cerrada", respuesta: "No" }] }),
   JSON.stringify({ a: { respuesta: "Sí" } })).decisiones[0].respuesta, "No");

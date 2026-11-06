@@ -178,9 +178,11 @@ Dos pestañas más en el mismo panel, junto a Iniciativas (en la app y en la web
 - **Gantt:** el día como lo pide la skill `gantt-flota`, sin que nadie escriba horas: una fila por tarea de hoy, con
   quién la hace (`equipo`, o el asiento de su agente: «claude opus»), un chip de una palabra, su enlace (ClickUp o el PR),
   el nombre entero (en varias líneas si es largo), una nota de una línea y sus barras sobre las 06:00–21:00 de Bogotá (de
-  noche el eje se estira hasta la hora actual, y de madrugada hasta lo que empezó hoy antes de las 06:00). Arriba, «Revisado HH:MM» y la leyenda de chips y barras. Rayas en las
-  salidas de 07, 12 y 19 y la hora actual en naranja. Barra sólida = medida o escrita, rayada (en el escritorio,
-  punteada: gpui no raya fondos) = estimada, tenue = ya terminada. En el teléfono la barra va debajo del nombre. Al pie:
+  noche el eje se estira hasta la hora actual, y de madrugada hasta las 00:00 si algo se trabajó hoy antes de las 06:00).
+  Arriba, una línea que explica la página, «Revisado HH:MM» y la leyenda de equipos, chips y barras. Rayas en las salidas
+  de 07, 12 y 19 y la hora actual en naranja. Las barras van del color del equipo (`equipo`), o del estado si no lo
+  tiene: sólida = medida o escrita, rayada (en el escritorio, punteada y clara: gpui no raya fondos) = estimada, tenue =
+  ya terminada. En el teléfono la barra va debajo del nombre. Al pie:
   «Listo hoy» o «Ya en producción», «Riesgos», y «Decisiones que esperan por ti», que se responden ahí mismo con las
   mismas tarjetas y el mismo guardado de la pestaña Decisiones.
 
@@ -236,20 +238,22 @@ Gantt (colección `decisiones`, skill `gantt-flota`), que Herdr no lee: el TPM c
 ```
 
 - `id` (el del documento en la base del Gantt) y `pregunta` (su `titulo`) son obligatorios; lo demás puede faltar.
-- `opciones`: los botones; `recomendada` (una de ellas) lleva ★. Sin opciones, la tarjeta dice que se responde en el Gantt.
+- `opciones`: los botones; `recomendada` (una de ellas) lleva ★. Sin opciones, se responde con el texto libre.
 - `de`: quién pregunta (el terminal o «TPM»); `tarea`: el id de la tarea a la que toca; `contexto`: una frase.
 - `frena: true` si para una salida o una tarea: borde rojo y va primero.
-- `estado`: `abierta`, `respondida` (Juan respondió en la página del Gantt; `respuesta` dice qué) o `cerrada`.
+- `estado`: `abierta`, `respondida` (Juan respondió en la página del Gantt; `respuesta` y `texto` dicen qué) o `cerrada`.
 
-Juan responde con un toque en una opción, en la app o en el teléfono, y puede cambiarla mientras el TPM no la cierre.
+Juan responde con un toque en una opción, con sus palabras en el campo de texto (Enviar), o con las dos, en la app o en
+el teléfono, en esta pestaña o al pie del Gantt (las mismas tarjetas), y puede cambiarla mientras el TPM no la cierre.
 La respuesta **no** va al `<producto>.json` (que es del TPM) sino a `~/.herdr/flota/respuestas/<producto>.json`, cuyo
 único escritor es `mods/flota-iniciativas/respuestas.py` (la app lo llama; la web le manda `POST /flota/respuesta`):
 
 ```json
-{ "D5": { "respuesta": "90 días", "at": 1793840000, "desde": "web" } }
+{ "D5": { "respuesta": "90 días", "texto": "pero solo para La Despensa", "at": 1793840000, "desde": "web" } }
 ```
 
-Solo guarda una de las `opciones` de una decisión que siga en el `<producto>.json` y no esté cerrada. El mismo
+`respuesta` es una de las `opciones` o `""` si Juan solo escribió; `texto`, lo que escribió (hasta 1000 caracteres) o `""`.
+Solo guarda en una decisión que siga en el `<producto>.json` y no esté cerrada, y con una opción, un texto o los dos. El mismo
 `respuestas.py servir` es el servicio `dev.herdr-flota.web` (sirve la foto de `/flota` como antes); para escribir pide
 la cabecera `X-Flota: 1` y, por el tailnet, el origen de la página y el login de Tailscale del dueño del Mac.
 En cada tick el TPM lleva esas respuestas a la base del Gantt y sigue como dice `gantt-flota` (skill `iniciativas-flota`,

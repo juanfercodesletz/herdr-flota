@@ -83,14 +83,17 @@ function decisiones(decs, respuestas) {
   try { mias = (respuestas && JSON.parse(respuestas)) || {}; } catch { /* un archivo de respuestas roto no tapa las decisiones */ }
   return decs.map((x) => {
     const id = str(x.id), opciones = Array.isArray(x.opciones) ? x.opciones.map(str).filter(Boolean) : [];
-    let estado = ESTADOS[x.estado] !== undefined ? x.estado : "abierta", respuesta = str(x.respuesta);
-    const mia = mias[id]?.respuesta;
-    // Lo de Herdr manda mientras el TPM no la cierre: Juan puede cambiar de opinión antes del tick.
-    if (estado !== "cerrada" && typeof mia === "string" && opciones.includes(mia)) { estado = "respondida"; respuesta = mia; }
+    let estado = ESTADOS[x.estado] !== undefined ? x.estado : "abierta", respuesta = str(x.respuesta), texto = str(x.texto);
+    const mia = mias[id], suya = typeof mia?.respuesta === "string" ? mia.respuesta : null, escrito = str(mia?.texto).trim();
+    // Lo de Herdr manda mientras el TPM no la cierre: Juan puede cambiar de opinión antes del tick. Vale una de las
+    // opciones, su texto libre, o los dos.
+    if (estado !== "cerrada" && suya != null && (opciones.includes(suya) || (suya === "" && escrito))) { estado = "respondida"; respuesta = suya; texto = escrito; }
     return { id, pregunta: x.pregunta, opciones, recomendada: str(x.recomendada), contexto: str(x.contexto),
-      de: str(x.de), tarea: str(x.tarea), frena: Boolean(x.frena), estado, respuesta };
+      de: str(x.de), tarea: str(x.tarea), frena: Boolean(x.frena), estado, respuesta, texto };
   }).sort(porClave((x) => [ESTADOS[x.estado], x.frena ? 0 : 1]));
 }
+// Lo que respondió, en una línea: «Hoy — pero solo si…».
+export const dicha = (d) => [d.respuesta, d.texto].filter(Boolean).join(" — ");
 // Las que esperan a Juan (el número de la pestaña).
 export const abiertas = (p) => (p.error ? 0 : p.decisiones.filter((x) => x.estado === "abierta").length);
 export const cuantas = (n) => `${n} abierta${n === 1 ? "" : "s"}`;
@@ -134,7 +137,7 @@ export function tablero(p) {
 
 // Gantt del día (skill gantt-flota): una fila por tarea de hoy, con sus barras sobre las 06:00–21:00 de Bogotá (el eje
 // se estira, entre las 00:00 y las 24:00, para que quepan la hora actual y lo que se trabajó hoy de madrugada o se trabaja
-// o estima de noche; lo que empezó ayer queda pegado al borde izquierdo).
+// o estima de noche; lo que empezó ayer arranca en las 00:00).
 // Las horas salen solas de herdr-task (`medidas`: las tareas de ~/.herdr/tasks/*.json, que junta el panel del
 // escritorio y viajan en la foto de la web): de cuando arrancó su agente a cuando quedó lista, o hasta ahora si sigue.
 // `desde` y `hasta` del TPM mandan sobre lo medido; `salida` agrupa por salida a producción y sin ella la fila va en
@@ -185,7 +188,9 @@ function barrasDe(m, now, d0) {
   const fin = vivo(m) ? ya : h(m.estado === "running" ? m.fin : m.ready_at || m.done_at || m.fin || now * 1000);
   const out = [[h(m.started), fin, null, false, m.estado === "done"]];
   const p = m.progreso;
-  if (vivo(m) && p?.at && p.left > 0 && h(p.at + p.left) > ya) out.push([ya, h(p.at + p.left), `falta ${dura(p.at + p.left - now * 1000)}`, true, false]);
+  // Mientras espera a Juan, herdr-task para su reloj (paused_at): lo que falta se cuenta desde ahora.
+  const vence = p?.paused_at ? now * 1000 + p.left - (p.paused_at - p.at) : p?.at + p?.left;
+  if (vivo(m) && p?.at && p.left > 0 && h(vence) > ya) out.push([ya, h(vence), `falta ${dura(vence - now * 1000)}`, true, false]);
   if (m.estado === "ready" && m.ready_at) out.push([h(m.ready_at), ya, "te espera", false, false, "espera"]);
   if (m.estado === "done" && m.ready_at && m.done_at > m.ready_at) out.push([h(m.ready_at), h(m.done_at), "visto bueno", false, true, "espera"]);
   return out;
@@ -220,18 +225,17 @@ export function gantt(p, medidas = [], now = Date.now() / 1000) {
   }
   const yo = (now - d0) / 3600, todas = filas.flatMap((f) => f.barras);
   const fin = Math.min(24, Math.max(H1, ...(filas.length ? [Math.ceil(yo + 0.01)] : []), ...todas.map(([, y]) => Math.ceil(y))));
-  // Empieza antes de las 06:00 si algo empezó hoy antes; estirado, termina en una hora rotulada (cada 3 h si pasa de 16 h).
-  const h0 = Math.min(H0, ...todas.filter(([x]) => x >= 0).map(([x]) => Math.floor(x)));
+  // Empieza antes de las 06:00 si algo se trabajó hoy antes (lo que viene de ayer, desde las 00:00); estirado, termina en
+  // una hora rotulada (cada 3 h si pasa de 16 h).
+  const h0 = Math.min(H0, ...todas.map(([x]) => Math.floor(Math.max(0, x))));
   const paso = fin - h0 > 16 ? 3 : 2, h1 = fin === H1 && h0 === H0 ? H1 : Math.min(24, h0 + paso * Math.ceil((fin - h0) / paso));
   const grupos = new Map();
   for (const f of filas) {
-    // Lo que empezó ayer y terminó antes del eje no se ve: la fila sale si le queda alguna barra.
-    f.barras = f.barras.filter(([, y]) => y > h0).map(([x, y, texto, estimada, hecha, tono]) => {
-      // Una barra muy corta se ensancha hacia atrás: su fin sigue en su hora (la de ahora, si corre).
-      const r = pos(y, h0, h1), w = Math.max(0.6, r - pos(x, h0, h1)), l = Math.max(0, r - w);
-      return { x: l, w: Math.min(100 - l, w), texto: texto ?? `${hhmm(x)}–${hhmm(y)}`, estimada: Boolean(estimada), hecha: Boolean(hecha), tono: tono || "" };
+    f.barras = f.barras.map(([x, y, texto, estimada, hecha, tono]) => {
+      // Una barra muy corta se ensancha hacia atrás (si cabe): su fin sigue en su hora, la de ahora si corre.
+      const r = pos(y, h0, h1), l = Math.max(0, r - Math.max(0.6, r - pos(x, h0, h1)));
+      return { x: l, w: r - l, texto: texto ?? `${hhmm(x)}–${hhmm(y)}`, estimada: Boolean(estimada), hecha: Boolean(hecha), tono: tono || "" };
     });
-    if (!f.barras.length) continue;
     if (!grupos.has(f.salida)) grupos.set(f.salida, []);
     grupos.get(f.salida).push(f);
   }
@@ -255,6 +259,9 @@ export function rotulos(g, ancho) {
   const r = (g.h1 - g.h0) * ancho, izq = g.ya > (g.h0 + g.h1) / 2, de = izq ? g.ya - r : g.ya, a = izq ? g.ya : g.ya + r;
   return g.marcas.filter((h) => h < de - (g.h1 - g.h0) * 0.03 || h > a + (g.h1 - g.h0) * 0.03);
 }
+
+// La línea que explica el Gantt, arriba, como la del artefacto. marca: cómo se ve lo estimado («rayada», «punteada»).
+export const explicacion = (marca) => `Cada fila es una tarea de hoy. A la izquierda: quién la hace, cómo va, su enlace y qué es. A la derecha: la barra va de cuando arrancó su agente a cuando quedó lista, o hasta ahora si sigue (${marca}: lo que dice que le falta; tenue: ya terminada). Las líneas finas son las salidas a producción de las 07:00, 12:00 y 19:00; la naranja es la hora actual.`;
 
 // El pie del Gantt: lo que ya salió (`produccion` del TPM o, sin ella, lo que quedó listo hoy), los riesgos (`riesgos`
 // del TPM o, sin ellos, lo bloqueado, en riesgo o atrasado) y cuántas decisiones esperan a Juan.
