@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 
 const EL = `const mk = () => { const o = { kids: [] }; const p = new Proxy(o, { get: (o, k) => k in o ? o[k] : (...a) => {
   if (k === "child") o.kids.push(a[0]); else if (k === "children") o.kids.push(...a[0]); else if (k === "when" && a[0]) a[1](p);
-  else if (k === "on_click") o.click = a[0]; else if (k === "id") o.idv = a[0];
+  else if (k === "on_click") o.click = a[0]; else if (k === "id") o.idv = a[0]; else if (k === "flex_none") o.none = true;
   return p; } }); return p; };`;
 const MODS = {
   "gpui-kit": EL + "export class View {}; export const div = () => mk(); export const svg = () => mk();",
@@ -41,8 +41,13 @@ const clic = async (id, despues) => {
 
 leerDe(producto());
 const t = textos(v.render());
-assert.ok(t.some((x) => /^Cada fila es una tarea de hoy/.test(x)), "la explicación arriba");
-assert.ok(["listo", "te espera", "estimada", "terminada", "Decisiones que esperan por ti"].every((x) => t.includes(x)), "leyenda y pie");
+// La explicación corta y la leyenda, al pie (antes de las decisiones), no arriba; y nada de la lista se encoge (HF-20:
+// sin flex_none, gpui encogía las filas y el pie dentro de la lista con desplazamiento, y su texto se pisaba).
+const ex = t.findIndex((x) => /^Cada barra va de cuando arrancó su agente/.test(x));
+assert.ok(ex > t.indexOf("Riesgos") && ex < t.indexOf("Decisiones que esperan por ti"), "la explicación al pie");
+assert.ok(["listo", "te espera", "necesita tu visto bueno"].every((x) => t.includes(x)), "leyenda de los chips");
+const lista = find(v.render(), "lista");
+assert.ok(lista.kids.length > 3 && lista.kids.every((k) => k.none), "ningún hijo de la lista se encoge");
 // D7: sus opciones, Hoy y Mañana (las decisiones que frenan van antes en la lista).
 const D7 = v.productos[0].decisiones.findIndex((d) => d.id === "D7"), op = (j) => `opcion-veta.json-${D7}-${j}`;
 assert.deepEqual(await clic(op(0), producto()), ["guardar", "veta.json", "D7", "Hoy", "app", ""]);

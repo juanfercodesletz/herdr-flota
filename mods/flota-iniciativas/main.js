@@ -11,7 +11,7 @@
 import { View, div, svg } from "gpui-kit";
 import { h_flex, v_flex, InputState, Input } from "gpui-base";
 import { exec, home, appHome, theme, layout, run, props, spaces } from "herdr";
-import { leer, avance, esperan, ordenar, tono, hace, SIN_ARCHIVO, tablero, gantt, pie, rotulos, hhmm, chip, tonoChip, LEYENDA, explicacion, dicha, pos, ahora, SALIDAS, SIN_PLAN, abiertas, cuantas, delEspacio, esHome, SIN_INICIATIVAS } from "./iniciativas.js";
+import { leer, avance, esperan, ordenar, tono, hace, SIN_ARCHIVO, tablero, gantt, pie, eje, textosFila, hhmm, chip, tonoChip, LEYENDA, explicacion, dicha, pos, ahora, SALIDAS, SIN_PLAN, abiertas, cuantas, delEspacio, esHome, SIN_INICIATIVAS } from "./iniciativas.js";
 
 const VISTAS = [["iniciativas", "Iniciativas"], ["tablero", "Tablero"], ["gantt", "Gantt"], ["decisiones", "Decisiones"]];
 
@@ -177,7 +177,8 @@ export default class Iniciativas extends View {
           .when(this.productos === null, (el) => el.child(div().py(8).text_size(12).text_color(t.dim).child("Leyendo…")))
           .when(this.productos?.length === 0, (el) => el.child(div().py(8).text_size(12).text_color(t.dim).child(SIN_ARCHIVO)))
           .when(this.productos?.length > 0 && vistos.length === 0, (el) => el.child(div().py(8).text_size(12).text_color(t.dim).child(SIN_INICIATIVAS)))
-          .children(lista))
+          // flex_none: en una lista con desplazamiento gpui encoge a los hijos que no caben, y su texto se pisa.
+          .children(lista.map((el) => el.flex_none())))
         .child(div().pt(8).text_size(10.5).text_color(t.dim).child(this.vista === "decisiones"
           ? "Las mismas decisiones del Gantt: respóndelas aquí o desde el celular · ★ recomendada"
           : this.vista === "gantt" ? "Horas de herdr-task · el TPM puede fijarlas con «desde» y «hasta»"
@@ -294,82 +295,82 @@ export default class Iniciativas extends View {
     });
   }
 
-  // Gantt (skill gantt-flota): un bloque por salida a producción («Hoy» si no hay). Con espacio, a la izquierda quién lo
-  // hace, el chip, el enlace, el nombre y la nota, y las barras a la derecha; angosto, las barras van debajo a todo el
-  // ancho, así se lee sin desplazarse. Rayas finas: salidas de 07, 12 y 19 (gpui no pinta bordes punteados verticales);
-  // naranja: ahora (Bogotá). Barra sólida = medida o escrita, contorno punteado = estimada, tenue = ya terminada.
-  // Al pie: decisiones que esperan (lleva a su pestaña), lo listo hoy o ya en producción, y los riesgos.
+  // Gantt (skill gantt-flota): una tarjeta por salida a producción («Hoy» si no hay), con su eje arriba como en el
+  // artefacto. Con espacio, a la izquierda el equipo, el chip, el enlace, el nombre (hasta dos líneas; entero en el
+  // tooltip) y la nota, y las barras a la derecha; angosto, las barras van debajo a todo el ancho. Rayas finas: las horas;
+  // marcadas y con nombre en el eje: las salidas de 07, 12 y 19 (gpui no pinta bordes punteados verticales); naranja:
+  // ahora (Bogotá). Barra sólida = medida o escrita, contorno punteado = estimada, tenue = ya terminada. El texto de una
+  // barra va dentro si cabe y si no al lado. Al pie: lo listo hoy o ya en producción, los riesgos, cómo se lee y las
+  // decisiones que esperan. Todo lo de la lista va con flex_none (ver render): si no, las filas se encogen y se pisan.
   gantt(p, t, color) {
     const g = gantt(p, this.medidas || []);
-    const revisado = div().pb(6).text_size(11).text_color(t.dim).child(`Revisado a las ${hhmm(ahora(this.leido, 0, 24) ?? 0)}`);
-    if (!g.grupos.length) return [revisado, div().py(6).text_size(12).text_color(t.dim).child(SIN_PLAN), ...this.pie(p, g, t)];
-    const ancho = this.ancho >= 620, NARANJA = "#f97316", P = (h) => `${pos(h, g.h0, g.h1)}%`;
+    const ancho = this.ancho >= 620, NARANJA = "#f97316", P = (h) => `${pos(h, g.h0, g.h1)}%`, IZQ = 300;
     const EQUIPO = { AI: t.ansi6, Backend: t.ansi3, Frontend: t.ansi2, Acciones: t.ansi5, DevOps: t.ansi4, TPM: t.muted };
-    const IZQ = 320;
-    const pista = (f) => div().relative().h(ancho ? 52 : 20).when(ancho, (e) => e.flex_1()).min_w(0)
+    // La pista: el panel menos sus márgenes (14 + 14), los de la tarjeta (12 + 12 y el borde) y la columna izquierda.
+    const W = Math.max(160, this.ancho - 28 - 26 - (ancho ? IZQ : 0));
+    const equipos = [...new Set(g.grupos.flatMap((x) => x.filas).map((f) => f.equipo))].filter((e) => EQUIPO[e]);
+    const cabeza = h_flex().pb(8).gap_x(12).gap_y(4).flex_wrap().items_center()
+      .child(div().text_size(11).text_color(t.dim).child(`Revisado a las ${hhmm(ahora(this.leido, 0, 24) ?? 0)}`))
+      .children(equipos.map((e) => h_flex().gap(5).items_center().child(div().size(9).rounded(2).bg(EQUIPO[e])).child(div().text_size(11).text_color(t.dim).child(e))));
+    if (!g.grupos.length) return [cabeza, div().py(6).text_size(12).text_color(t.dim).child(SIN_PLAN), ...this.pie(p, g, t, color, NARANJA)];
+    const regla = eje(g, W);
+    const rotulo = (r, h) => div().absolute().top(0).left(`${r.x}%`).w(r.w).h(h).flex().items_center()
+      .when(r.ancla === "centro", (e) => e.justify_center()).when(r.ancla === "der", (e) => e.justify_end())
+      .child(div().whitespace_nowrap().text_size(10).font_weight(r.tipo === "hora" ? 400 : 600)
+        .text_color(r.tipo === "ahora" ? NARANJA : r.tipo === "salida" ? t.foreground : t.dim).child(r.texto));
+    const rayas = (el) => el
       .children(g.marcas.map((h) => div().absolute().left(P(h)).top(0).bottom(0).w(1).bg(t.border).opacity(0.5)))
-      .children(SALIDAS.filter((h) => h > g.h0 && h < g.h1).map((h) => div().absolute().left(P(h)).top(0).bottom(0).w(1).bg(t.muted).opacity(0.6)))
-      .children(f.barras.map((b) => {
-        // Del color del equipo si lo tiene (si no, del estado); la espera a Juan, del suyo. Lo estimado: punteado y claro.
-        const c = b.tono ? color[b.tono] : EQUIPO[f.equipo] || color[tonoChip(f)];
-        // Sin relleno en la barra misma: su ancho es el de sus horas aunque sea de un minuto; el relleno va en el texto.
-        const el = div().absolute().left(`${b.x}%`).w(`${b.w}%`).top(ancho ? 16 : 1).h(18).rounded(4).flex().items_center().overflow_hidden();
-        const texto = div().px(5).text_size(10.5).font_medium().truncate().text_color(b.estimada ? t.foreground : t.background).child(b.texto);
-        return b.estimada ? el.border_1().border_dashed().border_color(c).child(div().absolute().inset_0().bg(c).opacity(0.28)).child(texto)
-          : el.bg(c).opacity(b.hecha ? 0.45 : 0.92).child(texto);
-      }))
-      .when(g.ya != null, (el) => el.child(div().absolute().left(P(g.ya)).top(0).bottom(0).w(2).bg(NARANJA)));
-    const eje = h_flex().h(18).when(ancho, (e) => e.child(div().w(IZQ).flex_none()))
-      .child(div().relative().flex_1().h_full()
-        // Sin la hora rotulada que quedaría debajo del rótulo de ahora.
-        .children(rotulos(g, 74 / Math.max(200, (ancho ? this.ancho - IZQ : this.ancho) - 28)).map((h) => div().absolute().left(P(h)).ml(-15).w(30).text_size(10).text_color(SALIDAS.includes(h) ? t.muted : t.dim).child(`${String(h % 24).padStart(2, "0")}:00`)))
-        // Pasada la mitad, el rótulo de ahora va a la izquierda de su raya, para no salirse por el borde.
-        .when(g.ya != null, (el) => el.child(div().absolute().left(P(g.ya)).w(66).ml(g.ya > (g.h0 + g.h1) / 2 ? -70 : 4).flex()
-          .when(g.ya > (g.h0 + g.h1) / 2, (e) => e.justify_end())
-          .child(div().px(2).text_size(10).font_semibold().text_color(NARANJA).bg(t.background).child(`ahora ${hhmm(g.ya)}`)))));
+      .children(SALIDAS.filter((h) => h > g.h0 && h < g.h1).map((h) => div().absolute().left(P(h)).top(0).bottom(0).w(1).bg(t.muted).opacity(0.7)))
+      .when(g.ya != null, (e) => e.child(div().absolute().left(P(g.ya)).top(0).bottom(0).w(2).bg(NARANJA)));
+    const pista = (f) => {
+      const { barras, fuera } = textosFila(f, W);
+      const linea = div().relative().w_full().h(18)
+        .children(barras.map((b) => {
+          // Del color del equipo si lo tiene (si no, del estado); la espera a Juan, del suyo. Lo estimado: punteado y claro.
+          const c = b.tono ? color[b.tono] : EQUIPO[f.equipo] || color[tonoChip(f)];
+          const el = div().absolute().left(`${b.x}%`).w(`${b.w}%`).top(0).h(18).rounded(4).flex().items_center().overflow_hidden();
+          const texto = div().px(5).text_size(10.5).font_medium().whitespace_nowrap().text_color(b.estimada ? t.foreground : t.background).child(b.dentro ? b.texto : "");
+          return b.estimada ? el.border_1().border_dashed().border_color(c).child(div().absolute().inset_0().bg(c).opacity(0.28)).child(texto)
+            : el.bg(c).opacity(b.hecha ? 0.45 : 0.92).child(texto);
+        }))
+        .when(Boolean(fuera), (e) => e.child(div().absolute().top(0).h(18).flex().items_center().w(`${fuera.w}%`)
+          .when(fuera.ancla === "izq", (x) => x.left(`${fuera.x}%`)).when(fuera.ancla === "der", (x) => x.right(`${100 - fuera.x}%`).justify_end())
+          .child(div().min_w(0).truncate().text_size(10.5).text_color(t.muted).child(fuera.texto))));
+      return rayas(div().relative().min_w(0).when(ancho, (e) => e.flex_1().self_stretch().min_h(44)).when(!ancho, (e) => e.h(24).mt(4)))
+        .child(div().absolute().inset_0().flex().items_center().child(linea));
+    };
     const quien = (f) => h_flex().gap(6).items_center().min_w(0)
       .when(Boolean(f.quien), (e) => e.child(div().flex_none().text_size(10).font_semibold().text_color(EQUIPO[f.quien] || t.muted).child(f.quien.toUpperCase())))
       .child(div().flex_none().px(6).rounded(8).bg(color[tonoChip(f)]).text_size(10.5).text_color(t.background).child(chip(f)))
       .child(div().flex_none().text_size(10.5).text_color(f.link ? t.accent : t.dim).child(f.enlace || "sin enlace"));
-    const nombre = (f) => div().text_size(12.5).line_height("17px").font_medium().text_color(f.hecha ? t.muted : t.foreground).child(f.titulo);
+    // Hasta dos líneas (gpui no corta por líneas: se corta por letras, a lo que cabe en la columna); entero en el tooltip.
+    const cabe = Math.floor(((ancho ? IZQ - 12 : W) / 6.6) * 2);
+    const nombre = (f) => div().text_size(12.5).line_height("17px").font_medium().text_color(f.hecha ? t.muted : t.foreground).child(corto(f.titulo, cabe));
     const nota = (f) => div().text_size(11).text_color(t.dim).truncate().child(f.nota);
-    const equipos = [...new Set(g.grupos.flatMap((x) => x.filas).map((f) => f.equipo))].filter((e) => EQUIPO[e]);
-    const out = [div().pb(6).text_size(11.5).line_height("16px").text_color(t.muted).child(explicacion("punteada y clara")), revisado, this.leyenda(t, color, NARANJA, equipos.map((e) => [e, EQUIPO[e]])), eje];
+    const out = [cabeza];
     g.grupos.forEach((x, i) => {
-      out.push(div().pt(10).pb(3).text_size(10.5).font_semibold().text_color(t.muted).child(x.titulo.toUpperCase()));
-      x.filas.forEach((f, j) => {
+      const titulo = h_flex().gap(6).items_baseline().child(div().text_size(12.5).font_semibold().child(x.titulo))
+        .child(div().text_size(11).text_color(t.dim).child(`${x.filas.length} ${x.filas.length === 1 ? "tarea" : "tareas"}`));
+      const reglas = div().relative().h(16).min_w(0).when(ancho, (e) => e.flex_1()).children(regla.map((r) => rotulo(r, 16)));
+      const filas = x.filas.map((f, j) => {
         const fila = (ancho
-          ? h_flex().min_h(52).items_center().child(v_flex().w(IZQ).flex_none().pr(12).py(4).gap(1).child(quien(f)).child(nombre(f)).child(nota(f))).child(pista(f))
-          : v_flex().py(6).gap(2).child(quien(f)).child(nombre(f)).child(nota(f)).child(div().pt(3).child(pista(f))))
-          .id(`fila-${p.archivo}-${i}-${j}`).border_t(1).border_color(t.border).cursor_pointer().hover((s) => s.bg(t.hover));
-        out.push(/^https?:\/\//.test(f.link) ? fila.on_click((_e, cx) => cx.open_url(f.link)) : fila);
+          ? h_flex().items_stretch().child(v_flex().w(IZQ).flex_none().justify_center().pr(12).py(6).gap(1).child(quien(f)).child(nombre(f)).child(nota(f))).child(pista(f))
+          : v_flex().py(6).gap(2).child(quien(f)).child(nombre(f)).child(nota(f)).child(pista(f)))
+          .id(`fila-${p.archivo}-${i}-${j}`).border_t(1).border_color(t.border).cursor_pointer().hover((s) => s.bg(t.hover))
+          .tooltip([f.titulo, f.nota].filter(Boolean).join("\n"));
+        return /^https?:\/\//.test(f.link) ? fila.on_click((_e, cx) => cx.open_url(f.link)) : fila;
       });
+      out.push(v_flex().mb(10).px(12).pt(8).pb(2).rounded(9).border_1().border_color(t.border)
+        .child(ancho ? h_flex().pb(4).items_center().child(div().w(IZQ).flex_none().child(titulo)).child(reglas) : v_flex().pb(4).gap(4).child(titulo).child(reglas))
+        .children(filas));
     });
-    return [...out, ...this.pie(p, g, t)];
+    return [...out, ...this.pie(p, g, t, color, NARANJA)];
   }
 
-  // La leyenda, arriba del eje como en el artefacto: los chips y qué es cada barra. Lo estimado va punteado y no rayado:
-  // gpui solo raya trazos de un lienzo (Background.pattern_slash), no el fondo de un div.
-  leyenda(t, color, NARANJA, equipos) {
-    const chipL = ([c, tono, dice]) => h_flex().gap(4).items_center()
-      .child(div().px(6).rounded(8).bg(color[tono]).text_size(10.5).text_color(t.background).child(c))
-      .when(Boolean(dice), (e) => e.child(div().text_size(11).text_color(t.dim).child(dice)));
-    const barraL = (texto, el, w = 22) => h_flex().gap(5).items_center().child(el.w(w).h(10).rounded(3)).child(div().text_size(11).text_color(t.dim).child(texto));
-    return v_flex().pb(8).gap(5)
-      .when(equipos.length > 0, (e) => e.child(h_flex().flex_wrap().gap_x(12).gap_y(4).children(equipos.map(([n, c]) =>
-        h_flex().gap(5).items_center().child(div().size(10).rounded(3).bg(c)).child(div().text_size(11).text_color(t.dim).child(n))))))
-      .child(h_flex().flex_wrap().gap_x(12).gap_y(4).children(LEYENDA.map(chipL))
-        .child(div().text_size(11).text_color(t.dim).child("sin ritmo, su estado")))
-      .child(h_flex().flex_wrap().gap_x(12).gap_y(4)
-        .child(barraL("medida o escrita", div().bg(color.curso).opacity(0.92)))
-        .child(barraL("estimada", div().relative().border_1().border_dashed().border_color(color.curso).child(div().absolute().inset_0().bg(color.curso).opacity(0.28))))
-        .child(barraL("terminada", div().bg(color.hecha).opacity(0.45)))
-        .child(barraL("ahora", div().bg(NARANJA), 2)));
-  }
-
-  // El pie del Gantt, como el del artefacto: dos tarjetas (lo listo o ya en producción, y los riesgos) y las decisiones
-  // que esperan, que se responden aquí mismo con las tarjetas de la pestaña Decisiones (el mismo this.decisiones).
-  pie(p, g, t) {
+  // El pie del Gantt, como el del artefacto: dos tarjetas (lo listo o ya en producción, y los riesgos), cómo se lee (los
+  // chips y las barras, en dos líneas cortas) y las decisiones que esperan, que se responden aquí mismo con las tarjetas
+  // de la pestaña Decisiones (el mismo this.decisiones).
+  pie(p, g, t, color, NARANJA) {
     const { produccion, riesgos } = pie(p, g);
     const tarjeta = (titulo, items, vacio) => v_flex().flex_1().min_w(0).p(12).gap(6).rounded(9).border_1().border_color(t.border)
       .child(div().text_size(12.5).font_semibold().child(titulo))
@@ -378,13 +379,22 @@ export default class Iniciativas extends View {
         : [div().text_size(11.5).text_color(t.dim).child(vacio)]);
     const tarjetas = [tarjeta(produccion.titulo, produccion.items, produccion.titulo === "Listo hoy" ? "Nada terminado hoy todavía." : "—"),
       tarjeta("Riesgos", riesgos, "Sin riesgos a la vista: nada bloqueado, en riesgo ni atrasado.")];
+    const chipL = ([c, tono, dice]) => h_flex().gap(4).items_center()
+      .child(div().px(6).rounded(8).bg(color[tono]).text_size(10.5).text_color(t.background).child(c))
+      .when(Boolean(dice), (e) => e.child(div().text_size(11).text_color(t.dim).child(dice)));
     return [
-      (this.ancho >= 620 ? h_flex().items_start() : v_flex()).mt(12).gap(8).children(tarjetas),
+      (this.ancho >= 620 ? h_flex().items_start() : v_flex()).mt(2).gap(8).children(tarjetas),
+      v_flex().pt(10).gap(5)
+        .child(h_flex().flex_wrap().gap_x(12).gap_y(4).children(LEYENDA.map(chipL)))
+        .child(div().text_size(11).line_height("15px").text_color(t.dim).child(explicacion("punteada"))),
       div().pt(14).pb(6).text_size(13).font_semibold().child("Decisiones que esperan por ti"),
       ...this.decisiones(p, t),
     ];
   }
 }
+
+// Un texto de a lo sumo n letras, cortado en una palabra con «…».
+const corto = (s, n) => (s.length <= n ? s : `${s.slice(0, n - 1).replace(/\s+\S*$/, "")}…`);
 
 // El botón de la barra de arriba, con la misma forma que los de Tasks y Files (mods/tabs-tasks).
 const find = (n, id) => (n?.id === id ? n : (n?.children || []).map((c) => find(c, id)).find(Boolean));
