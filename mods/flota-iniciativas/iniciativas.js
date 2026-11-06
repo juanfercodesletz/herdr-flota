@@ -288,7 +288,7 @@ export function textosFila(f, ancho, letra = 6.2) {
   const der = 100 - fin - gap, izq = ini - gap, cabe = ((texto.length * letra) / ancho) * 100;
   if (Math.max(der, izq) < 8) return { barras, fuera: null };
   // Si solo la primera barra no cabe, su texto va antes de ella (si cabe ahí); si no, después de la última.
-  const antes = barras.length > 0 && !barras[0].dentro && barras.slice(1).every((b) => b.dentro) && izq >= cabe;
+  const antes = barras.length > 1 && !barras[0].dentro && barras.slice(1).every((b) => b.dentro) && izq >= cabe;
   return { barras, fuera: !antes && (der >= cabe || der >= izq) ? { texto, x: fin + gap, w: der, ancla: "izq" } : { texto, x: ini - gap, w: izq, ancla: "der" } };
 }
 
