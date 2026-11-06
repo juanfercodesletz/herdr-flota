@@ -2,9 +2,10 @@
 """Las respuestas que Juan da en Herdr a las decisiones de un producto (README, «Decisiones»).
 
 Van a ~/.herdr/flota/respuestas/<archivo>, aparte del <producto>.json que escribe el TPM, así nadie pisa a nadie:
-este archivo es el único que escribe ahí, y el TPM solo lo lee en su tick. Forma: {"<id>": {"respuesta", "at", "desde"}}.
+este archivo es el único que escribe ahí, y el TPM solo lo lee en su tick. Forma: {"<id>": {"respuesta", "texto", "at", "desde"}}:
+`respuesta` es una de las opciones (o "" si Juan solo escribió) y `texto` lo que escribió con sus palabras (o "").
 
-  respuestas.py guardar <archivo> <id> <respuesta> [desde]   la app del escritorio (un toque en una opción)
+  respuestas.py guardar <archivo> <id> <respuesta> [desde] [texto]   la app del escritorio (una opción, o su texto)
   respuestas.py servir [puerto] [carpeta]                    la web: sirve la foto de /flota y recibe POST /respuesta
 """
 import fcntl, json, os, re, shutil, subprocess, sys, time
@@ -14,8 +15,9 @@ FLOTA = os.path.expanduser("~/.herdr/flota")
 ARCHIVO = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,80}\.json$")
 
 
-def guardar(archivo, id, respuesta, desde):
-    """Guarda la respuesta si la decisión existe, no está cerrada y la respuesta es una de sus opciones. Error: ValueError."""
+def guardar(archivo, id, respuesta, desde, texto=""):
+    """Guarda la respuesta si la decisión existe y no está cerrada, con una de sus opciones, un texto libre o los dos.
+    Error: ValueError."""
     if not ARCHIVO.match(archivo or "") or archivo == "presupuesto.json":
         raise ValueError("archivo de producto inválido")
     try:
@@ -27,8 +29,13 @@ def guardar(archivo, id, respuesta, desde):
         raise ValueError("esa decisión ya no está: el TPM la quitó")
     if dec.get("estado") == "cerrada":
         raise ValueError("esa decisión ya está cerrada")
-    if respuesta not in [str(o) for o in dec.get("opciones") or []]:
+    texto = (texto or "").strip()
+    if respuesta and respuesta not in [str(o) for o in dec.get("opciones") or []]:
         raise ValueError("esa respuesta no es una de sus opciones")
+    if not respuesta and not texto:
+        raise ValueError("falta elegir una opción o escribir algo")
+    if len(texto) > 1000:
+        raise ValueError("el texto pasa de 1000 caracteres")
     carpeta = os.path.join(FLOTA, "respuestas")
     os.makedirs(carpeta, exist_ok=True)
     ruta = os.path.join(carpeta, archivo)
@@ -41,7 +48,7 @@ def guardar(archivo, id, respuesta, desde):
                 todas = {}
         except (OSError, ValueError):
             todas = {}
-        todas[id] = {"respuesta": respuesta, "at": int(time.time()), "desde": desde}
+        todas[id] = {"respuesta": respuesta, "texto": texto, "at": int(time.time()), "desde": desde}
         tmp = f"{ruta}.{os.getpid()}"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(todas, f, ensure_ascii=False, indent=1)
@@ -81,12 +88,12 @@ class Web(SimpleHTTPRequestHandler):
             return self.responder(404, {"error": "no existe"})
         try:
             n = int(h.get("Content-Length") or 0)
-            if not 0 < n <= 4096:
+            if not 0 < n <= 8192:
                 raise ValueError("cuerpo vacío o muy grande")
             b = json.loads(self.rfile.read(n))
-            if not all(isinstance(b.get(k), str) for k in ("archivo", "id", "respuesta")):
+            if not all(isinstance(b.get(k), str) for k in ("archivo", "id", "respuesta")) or not isinstance(b.get("texto", ""), str):
                 raise ValueError("faltan archivo, id o respuesta")
-            self.responder(200, guardar(b["archivo"], b["id"], b["respuesta"], "web"))
+            self.responder(200, guardar(b["archivo"], b["id"], b["respuesta"], "web", b.get("texto", "")))
         except ValueError as e:
             self.responder(400, {"error": str(e)})
 
@@ -107,9 +114,9 @@ DUEÑO = None
 
 if __name__ == "__main__":
     a = sys.argv[1:]
-    if a[:1] == ["guardar"] and len(a) in (4, 5):
+    if a[:1] == ["guardar"] and len(a) in (4, 5, 6):
         try:
-            print(json.dumps(guardar(a[1], a[2], a[3], a[4] if len(a) == 5 else "app"), ensure_ascii=False))
+            print(json.dumps(guardar(a[1], a[2], a[3], a[4] if len(a) >= 5 else "app", a[5] if len(a) == 6 else ""), ensure_ascii=False))
         except ValueError as e:
             sys.exit(f"No se guardó: {e}")
     elif a[:1] == ["servir"]:

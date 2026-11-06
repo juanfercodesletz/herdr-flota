@@ -11,29 +11,35 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { definePlugin, placeOf, useSnap, useUI } from '@client/kernel.ts'
 import { Tab, Tabs } from '@client/ui.tsx'
-import { ahora, avance, chip, cuantas, esperan, gantt, hace, pos, SALIDAS, SIN_ARCHIVO, SIN_INICIATIVAS, SIN_PLAN, delEspacio, esHome, tablero, tono, tonoChip } from './iniciativas.js'
+import { ahora, avance, chip, cuantas, dicha, esperan, explicacion, gantt, hace, hhmm, LEYENDA, pie, pos, rotulos, SALIDAS, SIN_ARCHIVO, SIN_INICIATIVAS, SIN_PLAN, delEspacio, esHome, tablero, tono, tonoChip } from './iniciativas.js'
 
 interface Tarea {
   id: string; titulo: string; estado: string; link: string; sesion: string
   salida: string; desde: string; hasta: string; estimada: boolean; ritmo: string; nota: string; equipo: string
 }
-type Fila = Tarea & { de: string; barra: { x: number; w: number } | null; hecha: boolean }
+interface Tramo { x: number; w: number; texto: string; estimada: boolean; hecha: boolean; tono: string }
+type Fila = Tarea & { de: string; barras: Tramo[]; hecha: boolean; espera: boolean; quien: string; enlace: string }
+/** lo que devuelve gantt(): el eje en horas, la hora actual y los bloques */
+interface G { h0: number; h1: number; ya: number | null; marcas: number[]; grupos: { salida: string; titulo: string; filas: Fila[] }[] }
 interface Epica { id: string; titulo: string; estado: string; link: string; tareas: Tarea[] }
 interface Decision {
   id: string; pregunta: string; opciones: string[]; recomendada: string; contexto: string; de: string; tarea: string
-  frena: boolean; estado: 'abierta' | 'respondida' | 'cerrada'; respuesta: string
+  frena: boolean; estado: 'abierta' | 'respondida' | 'cerrada'; respuesta: string; texto: string
 }
 type Producto = { archivo: string; at: number; error?: string; aviso?: string; producto: string; espacios?: string[]; epicas: Epica[]; sueltas: Tarea[]; decisiones?: Decision[] }
 /** lo que Juan tocó en esta página, por "<archivo>#<id>", hasta que la foto del escritorio lo traiga */
-type Mias = Record<string, { respuesta: string; error?: string; guardando?: boolean }>
-/** total: cuántos productos hay en todos los espacios (los de `productos` son los del espacio abierto) */
-interface Foto { at: number; productos: Producto[]; total?: number }
+/** at: cuándo lo guardó respuestas.py (reloj del Mac); una foto leída después ya lo trae y manda ella */
+type Mias = Record<string, { respuesta: string; texto: string; at?: number; error?: string; guardando?: boolean }>
+/** total: cuántos productos hay en todos los espacios (los de `productos` son los del espacio abierto); medidas: las horas
+ * de las tareas de herdr-task, para el Gantt */
+interface Foto { at: number; productos: Producto[]; total?: number; medidas?: unknown[] }
 
 // Los tonos del escritorio: verde lo mergeado, azul con PR, rojo lo bloqueado, gris lo demás.
 const DOT: Record<string, string> = { hecha: 'bg-ready', pr: 'bg-focus', bloqueada: 'bg-need', curso: 'bg-fg2', cola: 'bg-line2', riesgo: 'bg-work', espera: 'bg-merged' }
 // El chip y el contorno de la barra del Gantt, en el mismo tono.
-const LINEA: Record<string, string> = { hecha: 'border-ready text-ready-fg', pr: 'border-focus text-focus', bloqueada: 'border-need text-need-fg', curso: 'border-fg3 text-fg2', cola: 'border-line2 text-fg3', riesgo: 'border-work text-work-fg', espera: 'border-merged text-merged' }
 const EQUIPO: Record<string, string> = { AI: 'text-focus', Backend: 'text-work-fg', Frontend: 'text-ready-fg', Acciones: 'text-merged', DevOps: 'text-fg2' }
+// Las barras del Gantt, del color del equipo (si la tarea lo dice); si no, del estado.
+const EQUIPO_BG: Record<string, string> = { AI: 'bg-focus', Backend: 'bg-work', Frontend: 'bg-ready', Acciones: 'bg-merged', DevOps: 'bg-fg2' }
 const VISTAS = [['iniciativas', 'Iniciativas'], ['tablero', 'Tablero'], ['gantt', 'Gantt'], ['decisiones', 'Decisiones']] as const
 type Vista = (typeof VISTAS)[number][0]
 const BAR = ['hecha', 'pr', 'curso', 'bloqueada'] as const
@@ -160,64 +166,123 @@ function Tablero({ p }: { p: Producto }) {
   )
 }
 
-/** la pista de una fila: rayas en las salidas de 07, 12 y 19, la hora actual en naranja y la barra
- * (sólida en marcha, contorno si es estimada, tenue si ya está hecha) */
-function Pista({ f, ya }: { f: Fila; ya: number | null }) {
-  const t = tonoChip(f)
+// Rayada: lo estimado, como en el artefacto del Gantt.
+const RAYAS = { backgroundImage: 'repeating-linear-gradient(45deg, rgba(255,255,255,.3) 0 4px, transparent 4px 8px)' }
+
+/** la pista de una fila: rayas finas en las horas rotuladas, punteadas en las salidas de 07, 12 y 19, la hora actual
+ * en naranja y las barras con su texto (sólida = medida o escrita, rayada = estimada, tenue = ya terminada) */
+function Pista({ f, g }: { f: Fila; g: G }) {
+  const P = (h: number) => `${pos(h, g.h0, g.h1)}%`
   return (
-    <span className="relative block h-3">
-      {SALIDAS.map((h) => <span key={h} className="absolute inset-y-0 border-l border-dashed border-line2" style={{ left: `${pos(h)}%` }} />)}
-      {f.barra ? (
+    <span className="relative mt-1 block h-5">
+      {g.marcas.map((h) => <span key={h} className="absolute inset-y-0 border-l border-line" style={{ left: P(h) }} />)}
+      {SALIDAS.filter((h) => h > g.h0 && h < g.h1).map((h) => <span key={h} className="absolute inset-y-0 border-l border-dashed border-fg3" style={{ left: P(h) }} />)}
+      {f.barras.map((b, i) => (
         <span
-          className={clsx('absolute inset-y-0.5 rounded-[3px]', f.estimada && !f.hecha ? clsx('border border-dashed', LINEA[t]) : clsx(DOT[t], f.hecha ? 'opacity-45' : 'opacity-90'))}
-          style={{ left: `${f.barra.x}%`, width: `${f.barra.w}%` }}
-        />
-      ) : null}
-      {ya != null ? <span className="absolute inset-y-0 w-0.5 bg-orange-500" style={{ left: `${pos(ya)}%` }} /> : null}
+          key={i}
+          title={b.texto}
+          className={clsx('absolute inset-y-0 flex items-center overflow-hidden rounded-[4px] text-[0.625rem] font-medium whitespace-nowrap text-bg', b.tono ? DOT[b.tono] : EQUIPO_BG[f.equipo] || DOT[tonoChip(f)], b.hecha ? 'opacity-45' : b.estimada ? 'opacity-75' : 'opacity-90')}
+          style={{ left: `${b.x}%`, width: `${b.w}%`, ...(b.estimada ? RAYAS : {}) }}
+        >
+          {/* el relleno va en el texto: la barra mide sus horas aunque sea de un minuto */}
+          <span className="px-1">{b.texto}</span>
+        </span>
+      ))}
+      {g.ya != null ? <span className="absolute -inset-y-1 w-0.5 bg-orange-500" style={{ left: P(g.ya) }} /> : null}
     </span>
   )
 }
 
-/** el Gantt del día (skill gantt-flota): un bloque por salida; cada fila con su chip, su nombre, equipo y nota, y la
- * barra debajo a todo el ancho, así se lee a 390 px sin desplazarse */
-function Gantt({ p }: { p: Producto }) {
-  const grupos = gantt(p) as { salida: string; titulo: string; filas: Fila[] }[]
-  if (!grupos.length) return <p className="px-2 py-1 text-[0.875rem] text-fg3">{SIN_PLAN}</p>
-  const ya = ahora()
+/** la leyenda, arriba del eje como en el artefacto: los chips y qué es cada barra */
+function Leyenda({ equipos }: { equipos: string[] }) {
+  const barra = (texto: string, cls: string, style?: object) => (
+    <span className="inline-flex items-center gap-1.5"><span className={clsx('h-2.5 w-5 rounded-[3px]', cls)} style={style} />{texto}</span>
+  )
+  return (
+    <div className="flex flex-col gap-1.5 pb-2 text-[0.75rem] text-fg3">
+      {equipos.length ? (
+        <div className="flex flex-wrap gap-x-3 gap-y-1">
+          {equipos.map((e) => <span key={e} className="inline-flex items-center gap-1.5"><span className={clsx('size-2.5 rounded-[3px]', EQUIPO_BG[e])} />{e}</span>)}
+        </div>
+      ) : null}
+      <div className="flex flex-wrap gap-x-3 gap-y-1">
+        {(LEYENDA as [string, string, string][]).map(([c, t, dice]) => (
+          <span key={c} className="inline-flex items-center gap-1"><span className={clsx('rounded-full px-1.5 leading-4 text-bg', DOT[t])}>{c}</span>{dice}</span>
+        ))}
+        <span>sin ritmo, su estado</span>
+      </div>
+      <div className="flex flex-wrap gap-x-3 gap-y-1">
+        {barra('medida o escrita', 'bg-fg2 opacity-90')}
+        {barra('estimada', 'bg-fg2 opacity-75', RAYAS)}
+        {barra('terminada', 'bg-ready opacity-45')}
+        <span className="inline-flex items-center gap-1.5"><span className="h-3 w-0.5 bg-orange-500" />ahora</span>
+      </div>
+    </div>
+  )
+}
+
+/** el Gantt del día (skill gantt-flota): un bloque por salida («Hoy» sin salidas); cada fila con quién la hace, su chip,
+ * su enlace, su nombre y su nota, y las barras debajo a todo el ancho, así se lee a 390 px sin desplazarse. Al pie, lo
+ * listo hoy o ya en producción, los riesgos, y las decisiones que esperan, que se responden aquí mismo con las tarjetas
+ * de la pestaña Decisiones (el mismo componente, el mismo guardado) */
+function Gantt({ p, medidas, at, mias, setMias }: { p: Producto; medidas: unknown[]; at: number; mias: Mias; setMias: (f: (m: Mias) => Mias) => void }) {
+  const g = gantt(p, medidas) as G
+  const { produccion, riesgos } = pie(p, g) as { produccion: { titulo: string; items: string[] }; riesgos: string[] }
+  const P = (h: number) => `${pos(h, g.h0, g.h1)}%`
+  const tarjeta = (titulo: string, items: string[], vacio: string) => (
+    <div className="rounded-lg border border-line px-3 py-2.5">
+      <h4 className="text-[0.875rem] font-semibold">{titulo}</h4>
+      {items.length ? (
+        <ul className="mt-1 list-disc space-y-1 pl-4 text-[0.8125rem] text-fg">{items.map((x, i) => <li key={i}>{x}</li>)}</ul>
+      ) : <p className="mt-1 text-[0.8125rem] text-fg3">{vacio}</p>}
+    </div>
+  )
   return (
     <div className="px-2">
-      <div className="relative h-4 text-[0.6875rem] text-fg3 tabular-nums" aria-hidden="true">
-        {[7, 10, 12, 15, 19].map((h) => (
-          <span key={h} className={clsx('absolute -translate-x-1/2', SALIDAS.includes(h) && 'text-fg2')} style={{ left: `${pos(h)}%` }}>{String(h).padStart(2, '0')}:00</span>
-        ))}
+      <p className="pb-1.5 text-[0.8125rem] leading-snug text-fg2">{explicacion('rayada')}</p>
+      <p className="pb-1.5 text-[0.75rem] text-fg3">Revisado a las {hhmm(ahora(at, 0, 24) ?? 0)}</p>
+      {!g.grupos.length ? <p className="py-1 text-[0.875rem] text-fg3">{SIN_PLAN}</p> : (
+        <>
+          <Leyenda equipos={[...new Set(g.grupos.flatMap((x) => x.filas).map((f) => f.equipo))].filter((e) => EQUIPO_BG[e])} />
+          <div className="relative h-4 text-[0.6875rem] text-fg3 tabular-nums" aria-hidden="true">
+            {(rotulos(g, 0.27) as number[]).map((h) => (
+              <span key={h} className={clsx('absolute -translate-x-1/2', SALIDAS.includes(h) && 'text-fg2')} style={{ left: P(h) }}>{String(h % 24).padStart(2, '0')}</span>
+            ))}
+            {g.ya != null ? <span className="absolute z-10 bg-bg px-1 font-semibold whitespace-nowrap text-orange-500" style={{ left: P(g.ya), transform: g.ya > (g.h0 + g.h1) / 2 ? 'translateX(-100%)' : undefined }}>ahora {hhmm(g.ya)}</span> : null}
+          </div>
+          {g.grupos.map((x) => (
+            <section key={x.salida}>
+              <h4 className="pt-3 pb-1 text-[0.6875rem] font-semibold tracking-wide text-fg2 uppercase max-sm:text-[0.75rem]">{x.titulo}</h4>
+              {x.filas.map((f, i) => {
+                const body = (
+                  <>
+                    <span className="flex min-w-0 items-center gap-1.5 text-[0.6875rem]">
+                      {f.quien ? <span className={clsx('shrink-0 font-semibold tracking-wide uppercase', EQUIPO[f.quien] || 'text-fg3')}>{f.quien}</span> : null}
+                      <span className={clsx('shrink-0 rounded-full px-1.5 leading-4 text-bg', DOT[tonoChip(f)])}>{chip(f)}</span>
+                      <span className={clsx('shrink-0', f.link ? 'text-focus underline underline-offset-2' : 'text-fg3')}>{f.enlace || 'sin enlace'}</span>
+                    </span>
+                    <span className={clsx('text-[0.875rem] leading-snug font-medium max-sm:text-[0.9375rem]', f.hecha ? 'text-fg2' : 'text-fg')}>{f.titulo}</span>
+                    <span className="truncate text-[0.75rem] text-fg3 max-sm:text-[0.8125rem]">{f.nota}</span>
+                    <Pista f={f} g={g} />
+                  </>
+                )
+                const cls = 'flex flex-col gap-0.5 border-t border-line py-2'
+                return isLink(f.link) ? (
+                  <a key={f.id || i} href={f.link} target="_blank" rel="noreferrer" className={clsx(cls, 'press -mx-2 rounded-row px-2 hover:bg-hover')}>{body}</a>
+                ) : (
+                  <div key={f.id || i} className={cls}>{body}</div>
+                )
+              })}
+            </section>
+          ))}
+        </>
+      )}
+      <div className="mt-3 grid gap-2">
+        {tarjeta(produccion.titulo, produccion.items, produccion.titulo === 'Listo hoy' ? 'Nada terminado hoy todavía.' : '—')}
+        {tarjeta('Riesgos', riesgos, 'Sin riesgos a la vista: nada bloqueado, en riesgo ni atrasado.')}
       </div>
-      {grupos.map((g) => (
-        <section key={g.salida}>
-          <h4 className="pt-3 pb-1 text-[0.6875rem] font-semibold tracking-wide text-fg2 uppercase phone:text-[0.75rem]">{g.titulo}</h4>
-          {g.filas.map((f, i) => {
-            const t = tonoChip(f)
-            const body = (
-              <>
-                <span className="flex min-w-0 items-center gap-2">
-                  <span className={clsx('shrink-0 rounded-full border px-1.5 text-[0.6875rem] leading-4 phone:text-[0.75rem]', LINEA[t])}>{chip(f)}</span>
-                  <span className={clsx('truncate text-[0.875rem] phone:text-[0.9375rem]', f.hecha ? 'text-fg2' : 'text-fg')}>{f.titulo}</span>
-                </span>
-                <span className="flex min-w-0 gap-1.5 text-[0.75rem] text-fg3 phone:text-[0.8125rem]">
-                  {f.equipo ? <span className={clsx('shrink-0', EQUIPO[f.equipo] || 'text-fg2')}>{f.equipo}</span> : null}
-                  <span className="truncate">{f.nota || f.de}</span>
-                </span>
-                <Pista f={f} ya={ya} />
-              </>
-            )
-            const cls = 'flex flex-col gap-1 border-t border-line py-2'
-            return isLink(f.link) ? (
-              <a key={f.id || i} href={f.link} target="_blank" rel="noreferrer" className={clsx(cls, 'press -mx-2 rounded-row px-2 hover:bg-hover')}>{body}</a>
-            ) : (
-              <div key={f.id || i} className={cls}>{body}</div>
-            )
-          })}
-        </section>
-      ))}
+      <h4 className="pt-4 pb-2 text-[0.9375rem] font-semibold">Decisiones que esperan por ti</h4>
+      <div className="-mx-2"><Decisiones p={p} mias={mias} setMias={setMias} /></div>
     </div>
   )
 }
@@ -225,25 +290,48 @@ function Gantt({ p }: { p: Producto }) {
 /** una decisión con lo que se tocó aquí encima (mientras el TPM no la cierre) */
 function conMia(p: Producto, d: Decision, mias: Mias): Decision {
   const m = mias[`${p.archivo}#${d.id}`]
-  return m && !m.error && d.estado !== 'cerrada' ? { ...d, estado: 'respondida', respuesta: m.respuesta } : d
+  // una foto escrita por un panel anterior a HF-19 no trae `texto`
+  return m && !m.error && d.estado !== 'cerrada' ? { ...d, estado: 'respondida', respuesta: m.respuesta, texto: m.texto } : { ...d, texto: d.texto ?? '' }
 }
 const abiertasDe = (p: Producto, mias: Mias) => (p.error ? 0 : (p.decisiones ?? []).filter((d) => conMia(p, d, mias).estado === 'abierta').length)
 
-async function responder(archivo: string, id: string, respuesta: string, setMias: (f: (m: Mias) => Mias) => void) {
+/** guarda una opción, un texto libre o los dos (respuestas.py, por POST /flota/respuesta); true si se guardó */
+async function responder(archivo: string, id: string, respuesta: string, texto: string, setMias: (f: (m: Mias) => Mias) => void) {
   const key = `${archivo}#${id}`
-  setMias((m) => ({ ...m, [key]: { respuesta, guardando: true } }))
+  texto = texto.trim()
+  setMias((m) => ({ ...m, [key]: { respuesta, texto, guardando: true } }))
   try {
-    const r = await fetch('/flota/respuesta', { method: 'POST', headers: { 'content-type': 'application/json', 'x-flota': '1' }, body: JSON.stringify({ archivo, id, respuesta }) })
+    const r = await fetch('/flota/respuesta', { method: 'POST', headers: { 'content-type': 'application/json', 'x-flota': '1' }, body: JSON.stringify({ archivo, id, respuesta, texto }) })
     const b = await r.json().catch(() => ({}))
-    setMias((m) => ({ ...m, [key]: r.ok ? { respuesta } : { respuesta, error: b.error || `no se guardó (${r.status})` } }))
+    setMias((m) => ({ ...m, [key]: r.ok ? { respuesta, texto, at: typeof b.at === 'number' ? b.at : Date.now() / 1000 } : { respuesta, texto, error: b.error || `no se guardó (${r.status})` } }))
+    return r.ok
   } catch {
-    setMias((m) => ({ ...m, [key]: { respuesta, error: 'no se guardó: /flota no responde en este Mac' } }))
+    setMias((m) => ({ ...m, [key]: { respuesta, texto, error: 'no se guardó: /flota no responde en este Mac' } }))
+    return false
   }
 }
 
-/** las decisiones de un producto: abiertas primero (borde rojo si frenan algo); tocar una opción la guarda y se puede
- * cambiar mientras el TPM no la cierre */
+/** lo respondido aquí tapa la foto solo hasta que llega una leída después de guardarlo (que ya lo trae, y quizá lo que
+ * se respondió después en el escritorio): entonces manda la foto */
+function useMiasVigentes(foto: Foto | null | 'error', setMias: (f: (m: Mias) => Mias) => void) {
+  const at = foto && foto !== 'error' ? foto.at : 0
+  useEffect(() => {
+    if (at) setMias((m) => {
+      const quedan = Object.entries(m).filter(([, x]) => x.guardando || x.error || !(x.at && x.at < at))
+      return quedan.length === Object.keys(m).length ? m : Object.fromEntries(quedan)
+    })
+  }, [at, setMias])
+}
+
+/** las decisiones de un producto: abiertas primero (borde rojo si frenan algo); tocar una opción la guarda, y debajo se
+ * puede escribir con sus palabras (solo o junto a la opción). Se cambia mientras el TPM no la cierre */
 function Decisiones({ p, mias, setMias }: { p: Producto; mias: Mias; setMias: (f: (m: Mias) => Mias) => void }) {
+  const [borrador, setBorrador] = useState<Record<string, string>>({})
+  // guardado, el borrador se suelta (el campo muestra lo guardado, y lo que llegue después desde el escritorio), salvo
+  // que Juan siguiera escribiendo mientras se guardaba: eso no se toca
+  const guardar = (id: string, respuesta: string, texto: string) => responder(p.archivo, id, respuesta, texto, setMias).then((ok) => {
+    if (ok) setBorrador((b) => (b[id] === undefined || b[id] === texto ? Object.fromEntries(Object.entries(b).filter(([k]) => k !== id)) : b))
+  })
   const decs = (p.decisiones ?? []).map((d) => conMia(p, d, mias))
   if (!decs.length) return <p className="px-2 py-1 text-[0.875rem] text-fg3">Sin decisiones abiertas.</p>
   return (
@@ -272,7 +360,7 @@ function Decisiones({ p, mias, setMias }: { p: Producto; mias: Mias; setMias: (f
                       type="button"
                       aria-pressed={on}
                       disabled={m?.guardando}
-                      onClick={() => !on && responder(p.archivo, d.id, o, setMias)}
+                      onClick={() => !on && guardar(d.id, o, borrador[d.id] ?? d.texto)}
                       className={clsx('press min-h-11 rounded-lg border px-3.5 text-[0.9375rem] disabled:opacity-60', on ? 'border-fg bg-fg text-bg' : 'border-line2 text-fg hover:bg-hover')}
                     >
                       {o}{o === d.recomendada ? ' ★' : ''}
@@ -281,11 +369,33 @@ function Decisiones({ p, mias, setMias }: { p: Producto; mias: Mias; setMias: (f
                 })}
               </div>
             ) : (
-              <p className="mt-2 text-[0.875rem] text-fg2">{cerrada ? `Respuesta: ${d.respuesta || '—'}` : 'Sin opciones: respóndela en el Gantt'}</p>
+              cerrada ? <p className="mt-2 text-[0.875rem] text-fg2">Respuesta: {dicha(d) || '—'}</p> : null
             )}
+            {!cerrada ? (
+              <div className="mt-2.5 flex flex-col gap-2">
+                <textarea
+                  aria-label={`Tu respuesta a ${d.id}, con tus palabras`}
+                  placeholder="Escribe tu respuesta o un matiz (opcional)"
+                  value={borrador[d.id] ?? d.texto}
+                  onChange={(e) => setBorrador((b) => ({ ...b, [d.id]: e.target.value }))}
+                  maxLength={1000}
+                  rows={2}
+                  className="w-full resize-y rounded-lg border border-line2 bg-bg px-3 py-2 text-[1rem] text-fg placeholder:text-fg3"
+                />
+                <button
+                  type="button"
+                  // sin texto vale si queda una opción: así se quita un matiz
+                  disabled={m?.guardando || (!(borrador[d.id] ?? d.texto).trim() && !d.respuesta)}
+                  onClick={() => guardar(d.id, d.respuesta, borrador[d.id] ?? d.texto)}
+                  className="press min-h-11 self-start rounded-lg bg-fg px-4 text-[0.9375rem] text-bg disabled:opacity-40"
+                >
+                  {d.estado === 'respondida' ? 'Cambiar respuesta' : 'Enviar'}
+                </button>
+              </div>
+            ) : null}
             {m?.error ? <p className="mt-2 text-[0.8125rem] text-need-fg">{m.error}</p> : null}
             {d.estado === 'respondida' && !m?.error ? (
-              <p className="mt-2 text-[0.8125rem] text-ready-fg">{m?.guardando ? 'Guardando…' : `Tu respuesta: ${d.respuesta} · el TPM la recoge en su siguiente tick`}</p>
+              <p className="mt-2 text-[0.8125rem] text-ready-fg">{m?.guardando ? 'Guardando…' : `Tu respuesta: ${dicha(d)} · el TPM la recoge en su siguiente tick`}</p>
             ) : null}
           </article>
         )
@@ -345,7 +455,7 @@ function Panel({ foto, onClose, mias, setMias }: { foto: Foto | null | 'error'; 
                 </h3>
                 {p.aviso ? <p className="px-2 pb-1 text-[0.8125rem] text-need-fg">{p.aviso}</p> : null}
                 {vista === 'tablero' ? <Tablero p={p} /> : null}
-                {vista === 'gantt' ? <Gantt p={p} /> : null}
+                {vista === 'gantt' ? <Gantt p={p} medidas={ok.medidas ?? []} at={ok.at} mias={mias} setMias={setMias} /> : null}
                 {vista === 'decisiones' ? <Decisiones p={p} mias={mias} setMias={setMias} /> : null}
                 {vista === 'iniciativas' ? <>
                 {p.epicas.map((e, i) => {
@@ -397,6 +507,7 @@ function Abridor() {
   const [open, setOpen] = useState(false)
   const [mias, setMias] = useState<Mias>({})
   const foto = useDelEspacio(useFoto())
+  useMiasVigentes(foto, setMias)
   const pendientes = foto && foto !== 'error' ? foto.productos.reduce((n, p) => n + abiertasDe(p, mias), 0) : 0
   // un punto rojo si hay tareas bloqueadas
   const bloqueadas = foto && foto !== 'error' && foto.productos.some((p) => !p.error && [...p.epicas.flatMap((e) => e.tareas), ...p.sueltas].some((t) => tono(t.estado) === 'bloqueada'))

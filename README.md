@@ -25,6 +25,7 @@ Diseño (canvas): https://claude.ai/artifact/5rVDW3BgbwVmEpvcSkQ9Lj — ronda 3 
 | Épicas, tareas y sus estados | ClickUp | el TPM (único escritor) |
 | Estado real de cada sesión | herdr-core | los agentes |
 | PRs y CI | GitHub | los agentes |
+| Horas de cada tarea (Gantt) | herdr-task (`~/.herdr/tasks/<carpeta>.json`) | herdr-task, al arrancar, quedar lista y aceptarse |
 | Decisiones | base de datos del artefacto del Gantt | agentes (preguntas), Juan (respuestas) |
 
 Herdr no puede leer la base de datos de un artefacto (verificado el 4-nov-2026: `claude -p`
@@ -174,12 +175,34 @@ Dos pestañas más en el mismo panel, junto a Iniciativas (en la app y en la web
 
 - **Tablero:** una columna por estado de tarea (`en cola`, `en curso`, `auditoría`, `PR abierto`, `bloqueada`), tarjetas del
   mismo alto; lo `merged` solo se cuenta. Clic en una tarjeta → su link. Angosto (el teléfono), una columna debajo de otra.
-- **Gantt:** el plan del día como lo pide la skill `gantt-flota`: un bloque por salida a producción, cada fila con su chip,
-  equipo y nota, y una barra sobre las 06:00–21:00 de Bogotá; rayas en las salidas de 07, 12 y 19 y la hora actual en
-  naranja. Barra sólida = en marcha, contorno = estimada, tenue = ya hecha. En el teléfono la barra va debajo del nombre.
+- **Gantt:** el día como lo pide la skill `gantt-flota`, sin que nadie escriba horas: una fila por tarea de hoy, con
+  quién la hace (`equipo`, o el asiento de su agente: «claude opus»), un chip de una palabra, su enlace (ClickUp o el PR),
+  el nombre entero (en varias líneas si es largo), una nota de una línea y sus barras sobre las 06:00–21:00 de Bogotá (de
+  noche el eje se estira hasta la hora actual, y de madrugada hasta las 00:00 si algo se trabajó hoy antes de las 06:00).
+  Arriba, una línea que explica la página, «Revisado HH:MM» y la leyenda de equipos, chips y barras. Rayas en las salidas
+  de 07, 12 y 19 y la hora actual en naranja. Las barras van del color del equipo (`equipo`), o del estado si no lo
+  tiene: sólida = medida o escrita, rayada (en el escritorio, punteada y clara: gpui no raya fondos) = estimada, tenue =
+  ya terminada. En el teléfono la barra va debajo del nombre. Al pie:
+  «Listo hoy» o «Ya en producción», «Riesgos», y «Decisiones que esperan por ti», que se responden ahí mismo con las
+  mismas tarjetas y el mismo guardado de la pestaña Decisiones.
 
-El Gantt usa campos **opcionales** de cada tarea (épica o suelta). Sin ellos Iniciativas y Tablero no cambian, y el Gantt
-de ese producto dice en una línea que no hay plan del día. Solo entran al Gantt las tareas con `salida`.
+**De dónde salen las horas.** De herdr-task: cada tarea de `~/.herdr/tasks/<carpeta>.json` trae `started` (arrancó su
+agente), `ready_at` (quedó lista), `done_at` (se aceptó y mergeó) y, mientras corre, lo que dijo que le falta
+(`progress.left`). El panel del escritorio las lee en cada vuelta (las que corren, esperan o se movieron en los dos
+últimos días) y las pone en la foto de la web, en `medidas`. Con eso cada tarea de hoy lleva:
+
+- una barra de `started` a `ready_at` (si sigue corriendo, hasta ahora; si sus agentes ya terminaron sin quedar lista,
+  hasta que se detuvo), tenue si ya está hecha;
+- si corre, una rayada de ahora a lo que le falta según su último `herdr-task status --left`;
+- si quedó lista, otra de `ready_at` a ahora («te espera»), o a `done_at` si ya se aceptó («visto bueno», tenue).
+
+La tarea de iniciativas se enlaza con la de herdr-task, en este orden: su `id` igual al `ref` de herdr-task (`HF-17`:
+así van herdr-flota y English Learning; si hay, solo cuenta ese); si no, dentro de los `espacios` del producto, el terminal de `sesion` entre sus
+agentes, su `link` igual al PR, o el código del título antes de « · » (`E4.1 · …` en los dos lados: así van las de VETA,
+cuyos ids son de ClickUp). El 5-nov, con los datos reales, el código del título enlaza 18 de las 39 de VETA (la
+`sesion`, 6); el `ref`, 19 de 22 en herdr-flota y 58 de 83 en English Learning.
+
+Lo que escribe el TPM sigue valiendo y manda sobre lo medido (todos los campos son **opcionales**):
 
 ```json
 { "id": "86e3yk0t5", "titulo": "Refrescar la OC desde Siigo", "estado": "bloqueada",
@@ -188,11 +211,17 @@ de ese producto dice en una línea que no hay plan del día. Solo entran al Gant
 ```
 
 - `salida`: `"HH:MM"` de hoy (`"12:00"`, `"19:00"`), `"mañana"` (sale «Mañana o después») u otro texto (`"7 nov"`).
-- `desde` y `hasta`: `"HH:MM"` de hoy, hora de Bogotá; la barra va de cuándo empezó a cuándo debería quedar lista.
-  Sin las dos (o mal escritas), la fila sale sin barra. `estimada: true` la dibuja en contorno.
-- `ritmo`: el chip de una palabra, `a tiempo`, `en riesgo`, `atrasado` o `te espera`. Sin él, el chip es el estado
-  (`listo` si está `merged`).
-- `nota`: una línea corta (número de PR y lo que sigue). `equipo`: `AI`, `Backend`, `Frontend`, `Acciones`, `DevOps`…
+  Agrupa las filas por salida a producción; sin ella, la fila va en el bloque «Hoy».
+- `desde` y `hasta`: `"HH:MM"` de hoy, hora de Bogotá. Con las dos, la barra es esa y no la medida; con una sola,
+  cambia el inicio o el fin del primer tramo medido. `estimada: true` la dibuja rayada.
+- `ritmo`: el chip de una palabra, `a tiempo`, `en riesgo`, `atrasado` o `te espera`. Sin él: `listo` lo terminado,
+  `te espera` lo que quedó lista en herdr-task o tiene `PR abierto`, y el estado lo demás.
+- `nota`: una línea corta (número de PR y lo que sigue). Sin ella, la de herdr-task: su última línea de status mientras
+  corre, «lista a las 15:13 · espera tu visto bueno», «PR #17 · mergeada a las 17:28». `equipo`: `AI`, `Backend`…
+
+Una tarea sin horas medidas hoy ni `desde`/`hasta` no entra; si no queda ninguna, el Gantt lo dice en una línea. Para el
+pie, el producto puede traer `produccion` (lo que ya salió, una frase por cosa) y `riesgos` (qué se rompe y para quién);
+sin ellos, el pie muestra lo terminado hoy y las tareas bloqueadas, en riesgo o atrasadas.
 
 ### Decisiones
 
@@ -209,20 +238,22 @@ Gantt (colección `decisiones`, skill `gantt-flota`), que Herdr no lee: el TPM c
 ```
 
 - `id` (el del documento en la base del Gantt) y `pregunta` (su `titulo`) son obligatorios; lo demás puede faltar.
-- `opciones`: los botones; `recomendada` (una de ellas) lleva ★. Sin opciones, la tarjeta dice que se responde en el Gantt.
+- `opciones`: los botones; `recomendada` (una de ellas) lleva ★. Sin opciones, se responde con el texto libre.
 - `de`: quién pregunta (el terminal o «TPM»); `tarea`: el id de la tarea a la que toca; `contexto`: una frase.
 - `frena: true` si para una salida o una tarea: borde rojo y va primero.
-- `estado`: `abierta`, `respondida` (Juan respondió en la página del Gantt; `respuesta` dice qué) o `cerrada`.
+- `estado`: `abierta`, `respondida` (Juan respondió en la página del Gantt; `respuesta` y `texto` dicen qué) o `cerrada`.
 
-Juan responde con un toque en una opción, en la app o en el teléfono, y puede cambiarla mientras el TPM no la cierre.
+Juan responde con un toque en una opción, con sus palabras en el campo de texto (Enviar), o con las dos, en la app o en
+el teléfono, en esta pestaña o al pie del Gantt (las mismas tarjetas), y puede cambiarla mientras el TPM no la cierre.
 La respuesta **no** va al `<producto>.json` (que es del TPM) sino a `~/.herdr/flota/respuestas/<producto>.json`, cuyo
 único escritor es `mods/flota-iniciativas/respuestas.py` (la app lo llama; la web le manda `POST /flota/respuesta`):
 
 ```json
-{ "D5": { "respuesta": "90 días", "at": 1793840000, "desde": "web" } }
+{ "D5": { "respuesta": "90 días", "texto": "pero solo para La Despensa", "at": 1793840000, "desde": "web" } }
 ```
 
-Solo guarda una de las `opciones` de una decisión que siga en el `<producto>.json` y no esté cerrada. El mismo
+`respuesta` es una de las `opciones` o `""` si Juan solo escribió; `texto`, lo que escribió (hasta 1000 caracteres) o `""`.
+Solo guarda en una decisión que siga en el `<producto>.json` y no esté cerrada, y con una opción, un texto o los dos. El mismo
 `respuestas.py servir` es el servicio `dev.herdr-flota.web` (sirve la foto de `/flota` como antes); para escribir pide
 la cabecera `X-Flota: 1` y, por el tailnet, el origen de la página y el login de Tailscale del dueño del Mac.
 En cada tick el TPM lleva esas respuestas a la base del Gantt y sigue como dice `gantt-flota` (skill `iniciativas-flota`,
@@ -232,8 +263,9 @@ Por qué no por las tarjetas «Needs you» de Shepherdr: esas son la pregunta de
 (`AskUserQuestion`, un permiso), y la respuesta vuelve a ese agente. Estas decisiones no paran a nadie y las lleva el TPM.
 Si quien pregunta es una tarea de Shepherdr que ya está en «Needs you», se responde ahí y el TPM no la copia.
 
-Pruebas: `node shell/prueba-iniciativas.mjs` (lector) y `zsh shell/prueba-decisiones.zsh` (guardar y servidor, en un
-HOME temporal).
+Pruebas: `node shell/prueba-iniciativas.mjs` (lector), `zsh shell/prueba-decisiones.zsh` (guardar y servidor, en un
+HOME temporal) y `node shell/prueba-gantt-app.mjs` (el Gantt del panel del escritorio y sus decisiones, con herdr y gpui
+de mentira).
 
 ## Perfil de Claude de cada chat
 

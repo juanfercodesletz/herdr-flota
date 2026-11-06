@@ -9,16 +9,17 @@
 // Muestra los productos del espacio abierto (su id en el campo `espacios`); Home, todos. Cambia con el espacio, sin esperar
 // la siguiente lectura: spaces() hace que el mod se vuelva a dibujar.
 import { View, div, svg } from "gpui-kit";
-import { h_flex, v_flex } from "gpui-base";
+import { h_flex, v_flex, InputState, Input } from "gpui-base";
 import { exec, home, appHome, theme, layout, run, props, spaces } from "herdr";
-import { leer, avance, esperan, ordenar, tono, hace, SIN_ARCHIVO, tablero, gantt, chip, tonoChip, pos, ahora, SALIDAS, SIN_PLAN, abiertas, cuantas, delEspacio, esHome, SIN_INICIATIVAS } from "./iniciativas.js";
+import { leer, avance, esperan, ordenar, tono, hace, SIN_ARCHIVO, tablero, gantt, pie, rotulos, hhmm, chip, tonoChip, LEYENDA, explicacion, dicha, pos, ahora, SALIDAS, SIN_PLAN, abiertas, cuantas, delEspacio, esHome, SIN_INICIATIVAS } from "./iniciativas.js";
 
 const VISTAS = [["iniciativas", "Iniciativas"], ["tablero", "Tablero"], ["gantt", "Gantt"], ["decisiones", "Decisiones"]];
 
-// Cada <producto>.json de ~/.herdr/flota con su hora y sus respuestas dadas en Herdr, en una sola llamada.
-// presupuesto.json es de Entorno.
+// Cada <producto>.json de ~/.herdr/flota con su hora y sus respuestas dadas en Herdr, y las horas de las tareas de
+// herdr-task (~/.herdr/tasks/*.json) que el Gantt pinta: las que corren, esperan o se movieron en los dos últimos días.
+// Todo en una sola llamada. presupuesto.json es de Entorno.
 const LISTAR = `
-import glob, json, os
+import glob, json, os, time
 out = []
 for f in sorted(glob.glob(os.path.expanduser("~/.herdr/flota/*.json"))):
     n = os.path.basename(f)
@@ -28,7 +29,26 @@ for f in sorted(glob.glob(os.path.expanduser("~/.herdr/flota/*.json"))):
     try: r = open(os.path.join(os.path.dirname(f), "respuestas", n), encoding="utf-8").read()
     except Exception: r = None
     out.append({"archivo": n, "at": int(os.path.getmtime(f)), "texto": t, "respuestas": r})
-print(json.dumps(out))
+med, viejo = [], (time.time() - 2 * 86400) * 1000
+for f in glob.glob(os.path.expanduser("~/.herdr/tasks/*.json")):
+    try: d = json.load(open(f, encoding="utf-8"))
+    except Exception: continue
+    if not isinstance(d, dict) or not isinstance(d.get("tasks"), list): continue
+    for t in d["tasks"]:
+        if not isinstance(t, dict) or not isinstance(t.get("started"), (int, float)): continue
+        ag = [a for a in t.get("agents") or [] if isinstance(a, dict)]
+        fin = max(a["ended"] for a in ag) if ag and all(isinstance(a.get("ended"), (int, float)) for a in ag) else None
+        vivo = t.get("state") in ("running", "ready") and not (t.get("state") == "running" and fin)
+        if not vivo and max(x for x in (t["started"], t.get("ready_at"), t.get("done_at"), fin) if isinstance(x, (int, float))) < viejo: continue
+        argv = (ag[-1].get("argv") or []) if ag else []
+        modelo = argv[argv.index("--model") + 1] if "--model" in argv[:-1] else ""
+        p = t.get("progress") if isinstance(t.get("progress"), dict) else None
+        med.append({"ref": f"{d['prefix']}-{t.get('id')}" if d.get("prefix") else "", "titulo": t.get("title") or "", "estado": t.get("state"),
+            "space": t.get("space"), "asiento": " ".join(x for x in (ag[-1].get("agent") if ag else "", modelo) if x),
+            "agentes": [a["address"] for a in ag if a.get("address")], "started": t["started"], "ready_at": t.get("ready_at"),
+            "done_at": t.get("done_at"), "fin": fin, "pr": (t.get("pr") or {}).get("url") or "",
+            "progreso": {"texto": p.get("text") or "", "at": p.get("at"), "left": p.get("left"), "paused_at": p.get("paused_at")} if p else None})
+print(json.dumps({"archivos": out, "medidas": med}))
 `;
 
 export default class Iniciativas extends View {
@@ -48,13 +68,42 @@ export default class Iniciativas extends View {
 
   async leerTodo(cx) {
     try {
-      const files = JSON.parse((await exec("python3", ["-c", LISTAR])).stdout || "[]");
-      this.productos = ordenar(files.map((f) => ({ ...leer(f.archivo, f.texto, f.respuestas), at: f.at })));
-    } catch { this.productos = [{ archivo: "", error: "No se pudo leer ~/.herdr/flota" }]; }
+      const { archivos, medidas } = JSON.parse((await exec("python3", ["-c", LISTAR])).stdout || "{}");
+      this.productos = ordenar(archivos.map((f) => ({ ...leer(f.archivo, f.texto, f.respuestas), at: f.at })));
+      this.medidas = medidas;
+    } catch { this.productos = [{ archivo: "", error: "No se pudo leer ~/.herdr/flota" }]; this.medidas = []; }
+    this.leido = Math.floor(Date.now() / 1000);
+    this.entradasDe(this.productos);
     // La web de Shepherdr dibuja lo mismo desde esta foto (web/flota-iniciativas, servida en /flota).
-    const foto = JSON.stringify({ at: Math.floor(Date.now() / 1000), productos: this.productos });
+    const foto = JSON.stringify({ at: this.leido, productos: this.productos, medidas: this.medidas });
     exec("sh", ["-c", 'mkdir -p "${1%/*}" && printf %s "$2" > "$1.$$" && mv "$1.$$" "$1"', "sh", home() + "/.herdr/flota/web/iniciativas.json", foto]).catch(() => {});
     cx.notify();
+  }
+
+  // Un campo de texto por decisión, para responder con sus palabras: gpui pide crearlo fuera de render, así que se crea
+  // al leer y se guarda por "<archivo>#<id>". Enter o Enviar lo guardan con la opción que ya tenga. En cada lectura, un
+  // campo que Juan no tocó toma el texto guardado (quizá desde el teléfono); uno que está escribiendo, no se pisa.
+  entradasDe(productos) {
+    this.entradas ??= {};
+    this.leidos ??= {}; // el último texto guardado que se puso en cada campo
+    for (const p of productos) for (const d of p.error ? [] : p.decisiones) {
+      const k = `${p.archivo}#${d.id}`, st = this.entradas[k];
+      if (st) {
+        if (st.value() === this.leidos[k] && d.texto !== this.leidos[k]) { st.set_value(d.texto); this.leidos[k] = d.texto; }
+        continue;
+      }
+      if (d.estado === "cerrada") continue;
+      try {
+        const nuevo = InputState.new({ placeholder: "Escribe tu respuesta o un matiz", value: d.texto });
+        nuevo.on("submit", (_e, cx) => this.enviar(p.archivo, d.id, cx));
+        this.entradas[k] = nuevo; this.leidos[k] = d.texto;
+      } catch { /* sin campo, quedan las opciones */ }
+    }
+  }
+
+  enviar(archivo, id, cx) {
+    const d = this.productos?.find((p) => p.archivo === archivo)?.decisiones?.find((x) => x.id === id);
+    this.responder(archivo, id, d?.respuesta || "", cx, this.entradas?.[`${archivo}#${id}`]?.value() ?? "");
   }
 
   render() {
@@ -131,6 +180,7 @@ export default class Iniciativas extends View {
           .children(lista))
         .child(div().pt(8).text_size(10.5).text_color(t.dim).child(this.vista === "decisiones"
           ? "Las mismas decisiones del Gantt: respóndelas aquí o desde el celular · ★ recomendada"
+          : this.vista === "gantt" ? "Horas de herdr-task · el TPM puede fijarlas con «desde» y «hasta»"
           : "Épicas y tareas de ClickUp · el TPM las iguala en cada tick")));
 
     if (!sel) return root;
@@ -203,7 +253,7 @@ export default class Iniciativas extends View {
     const out = [div().pb(4).text_size(11.5).text_color(t.muted).child(`${cuantas(abiertas(p))} · el TPM recoge las respondidas en su siguiente tick`)];
     if (this.aviso) out.push(div().pb(4).text_size(12).text_color(t.blocked).child(this.aviso));
     p.decisiones.forEach((d, i) => {
-      const cerrada = d.estado === "cerrada", abierta = d.estado === "abierta";
+      const cerrada = d.estado === "cerrada", abierta = d.estado === "abierta", entrada = this.entradas?.[`${p.archivo}#${d.id}`];
       const sub = [d.de && `pregunta ${d.de}`, d.tarea, d.contexto].filter(Boolean).join(" · ");
       out.push(v_flex().id(`decision-${p.archivo}-${i}`).mb(8).p(12).gap(8).rounded(9).bg(t.background).border_1()
         .border_color(abierta && d.frena ? t.blocked : t.border).when(cerrada, (e) => e.opacity(0.6))
@@ -219,59 +269,120 @@ export default class Iniciativas extends View {
             return div().id(`opcion-${p.archivo}-${i}-${j}`).h(30).px(12).flex().items_center().rounded(7).text_size(12.5)
               .bg(on ? t.foreground : t.background).text_color(on ? t.background : t.foreground).border_1().border_color(on ? t.foreground : t.border)
               .cursor_pointer().hover((s) => s.bg(on ? t.foreground : t.hover))
-              .on_click((_e, cx) => this.responder(p.archivo, d.id, o, cx))
+              .on_click((_e, cx) => this.responder(p.archivo, d.id, o, cx, entrada?.value() ?? d.texto))
               .child(o === d.recomendada ? `${o} ★` : o);
           }))
-          : div().text_size(12).text_color(t.muted).child(cerrada ? `Respuesta: ${d.respuesta || "—"}` : "Sin opciones: respóndela en el Gantt"))
-        .when(d.estado === "respondida", (e) => e.child(div().text_size(11.5).text_color(t.ansi2).child(`Tu respuesta: ${d.respuesta} · el TPM la recoge en su siguiente tick`))));
+          : cerrada ? div().text_size(12).text_color(t.muted).child(`Respuesta: ${dicha(d) || "—"}`) : div())
+        // Con sus palabras, como en el artefacto: sola o junto a la opción elegida.
+        .when(Boolean(entrada) && !cerrada, (e) => e.child(h_flex().gap(6).items_center()
+          .child(div().id(`texto-${p.archivo}-${i}`).flex_1().min_w(0).h(30).px(10).flex().items_center().rounded(7).border_1().border_color(t.border)
+            .cursor_text().on_mouse_down("left", (_e, cx) => cx.stop_propagation()).child(Input.new(entrada).h_full().text_size(12).text_color(t.foreground)))
+          .child(div().id(`enviar-${p.archivo}-${i}`).h(30).px(12).flex().items_center().rounded(7).bg(t.foreground).text_color(t.background).text_size(12.5)
+            .cursor_pointer().on_click((_e, cx) => this.enviar(p.archivo, d.id, cx)).child(d.estado === "respondida" ? "Cambiar" : "Enviar"))))
+        .when(d.estado === "respondida", (e) => e.child(div().text_size(11.5).text_color(t.ansi2).child(`Tu respuesta: ${dicha(d)} · el TPM la recoge en su siguiente tick`))));
     });
     return out;
   }
 
-  responder(archivo, id, respuesta, cx) {
+  responder(archivo, id, respuesta, cx, texto = "") {
     cx.spawn(async (cx) => {
-      const r = await exec("python3", [`${appHome()}/mods/flota-iniciativas/respuestas.py`, "guardar", archivo, id, respuesta, "app"]).catch((e) => ({ code: 1, stderr: String(e) }));
+      const r = await exec("python3", [`${appHome()}/mods/flota-iniciativas/respuestas.py`, "guardar", archivo, id, respuesta, "app", texto]).catch((e) => ({ code: 1, stderr: String(e) }));
       this.aviso = r.code ? (r.stderr || "No se guardó la respuesta").trim().split("\n").pop() : "";
+      // Guardado: el campo queda al día con lo que guardó, así la siguiente lectura (quizá con texto del teléfono) lo iguala.
+      if (!r.code && this.leidos) this.leidos[`${archivo}#${id}`] = texto;
       await this.leerTodo(cx);
     });
   }
 
-  // Gantt: un bloque por salida a producción. Con espacio, el nombre a la izquierda y la barra a la derecha; angosto,
-  // la barra va debajo del nombre a todo el ancho, así se lee sin desplazarse. Rayas: salidas de 07, 12 y 19;
-  // naranja: ahora (Bogotá). Las salidas van en línea fina (gpui no pinta bordes punteados verticales). Barra sólida = en marcha, contorno = estimada, tenue = ya hecha.
+  // Gantt (skill gantt-flota): un bloque por salida a producción («Hoy» si no hay). Con espacio, a la izquierda quién lo
+  // hace, el chip, el enlace, el nombre y la nota, y las barras a la derecha; angosto, las barras van debajo a todo el
+  // ancho, así se lee sin desplazarse. Rayas finas: salidas de 07, 12 y 19 (gpui no pinta bordes punteados verticales);
+  // naranja: ahora (Bogotá). Barra sólida = medida o escrita, contorno punteado = estimada, tenue = ya terminada.
+  // Al pie: decisiones que esperan (lleva a su pestaña), lo listo hoy o ya en producción, y los riesgos.
   gantt(p, t, color) {
-    const grupos = gantt(p);
-    if (!grupos.length) return [div().py(6).text_size(12).text_color(t.dim).child(SIN_PLAN)];
-    const ancho = this.ancho >= 620, ya = ahora(), NARANJA = "#f97316";
-    const EQUIPO = { AI: t.ansi6, Backend: t.ansi3, Frontend: t.ansi2, Acciones: t.ansi5, DevOps: t.ansi4 };
-    const pista = (f) => div().relative().h(ancho ? 40 : 14).when(ancho, (e) => e.flex_1()).min_w(0)
-      .children(SALIDAS.map((h) => div().absolute().left(`${pos(h)}%`).top(0).bottom(0).w(1).bg(t.border)))
-      .when(ya != null, (el) => el.child(div().absolute().left(`${pos(ya)}%`).top(0).bottom(0).w(2).bg(NARANJA)))
-      .when(Boolean(f?.barra), (el) => {
-        const c = color[tonoChip(f)], b = div().absolute().left(`${f.barra.x}%`).w(`${f.barra.w}%`).top(ancho ? 15 : 2).h(10).rounded(3);
-        return el.child(f.estimada && !f.hecha ? b.border_1().border_dashed().border_color(c) : b.bg(c).opacity(f.hecha ? 0.45 : 0.9));
-      });
-    const eje = h_flex().h(16).when(ancho, (e) => e.child(div().w(300).flex_none()))
-      .child(div().relative().flex_1().h_full().children([7, 10, 12, 15, 19].map((h) =>
-        div().absolute().left(`${pos(h)}%`).ml(-15).w(30).text_size(10).text_color(SALIDAS.includes(h) ? t.muted : t.dim).child(`${String(h).padStart(2, "0")}:00`))));
-    const nombre = (f) => h_flex().gap(8).items_center().min_w(0)
-      .child(div().flex_none().px(6).rounded(8).border_1().border_color(color[tonoChip(f)]).text_size(10.5).text_color(color[tonoChip(f)]).child(chip(f)))
-      .child(div().flex_1().min_w(0).text_size(12.5).text_color(f.hecha ? t.muted : t.foreground).truncate().child(f.titulo));
-    const sub = (f) => h_flex().gap(6).min_w(0).text_size(11).text_color(t.dim)
-      .when(Boolean(f.equipo), (e) => e.child(div().flex_none().text_color(EQUIPO[f.equipo] || t.muted).child(f.equipo)))
-      .child(div().flex_1().min_w(0).truncate().child(f.nota || f.de));
-    const out = [eje];
-    grupos.forEach((g, i) => {
-      out.push(div().pt(8).pb(2).text_size(10.5).font_semibold().text_color(t.muted).child(g.titulo.toUpperCase()));
-      g.filas.forEach((f, j) => {
+    const g = gantt(p, this.medidas || []);
+    const revisado = div().pb(6).text_size(11).text_color(t.dim).child(`Revisado a las ${hhmm(ahora(this.leido, 0, 24) ?? 0)}`);
+    if (!g.grupos.length) return [revisado, div().py(6).text_size(12).text_color(t.dim).child(SIN_PLAN), ...this.pie(p, g, t)];
+    const ancho = this.ancho >= 620, NARANJA = "#f97316", P = (h) => `${pos(h, g.h0, g.h1)}%`;
+    const EQUIPO = { AI: t.ansi6, Backend: t.ansi3, Frontend: t.ansi2, Acciones: t.ansi5, DevOps: t.ansi4, TPM: t.muted };
+    const IZQ = 320;
+    const pista = (f) => div().relative().h(ancho ? 52 : 20).when(ancho, (e) => e.flex_1()).min_w(0)
+      .children(g.marcas.map((h) => div().absolute().left(P(h)).top(0).bottom(0).w(1).bg(t.border).opacity(0.5)))
+      .children(SALIDAS.filter((h) => h > g.h0 && h < g.h1).map((h) => div().absolute().left(P(h)).top(0).bottom(0).w(1).bg(t.muted).opacity(0.6)))
+      .children(f.barras.map((b) => {
+        // Del color del equipo si lo tiene (si no, del estado); la espera a Juan, del suyo. Lo estimado: punteado y claro.
+        const c = b.tono ? color[b.tono] : EQUIPO[f.equipo] || color[tonoChip(f)];
+        // Sin relleno en la barra misma: su ancho es el de sus horas aunque sea de un minuto; el relleno va en el texto.
+        const el = div().absolute().left(`${b.x}%`).w(`${b.w}%`).top(ancho ? 16 : 1).h(18).rounded(4).flex().items_center().overflow_hidden();
+        const texto = div().px(5).text_size(10.5).font_medium().truncate().text_color(b.estimada ? t.foreground : t.background).child(b.texto);
+        return b.estimada ? el.border_1().border_dashed().border_color(c).child(div().absolute().inset_0().bg(c).opacity(0.28)).child(texto)
+          : el.bg(c).opacity(b.hecha ? 0.45 : 0.92).child(texto);
+      }))
+      .when(g.ya != null, (el) => el.child(div().absolute().left(P(g.ya)).top(0).bottom(0).w(2).bg(NARANJA)));
+    const eje = h_flex().h(18).when(ancho, (e) => e.child(div().w(IZQ).flex_none()))
+      .child(div().relative().flex_1().h_full()
+        // Sin la hora rotulada que quedaría debajo del rótulo de ahora.
+        .children(rotulos(g, 74 / Math.max(200, (ancho ? this.ancho - IZQ : this.ancho) - 28)).map((h) => div().absolute().left(P(h)).ml(-15).w(30).text_size(10).text_color(SALIDAS.includes(h) ? t.muted : t.dim).child(`${String(h % 24).padStart(2, "0")}:00`)))
+        // Pasada la mitad, el rótulo de ahora va a la izquierda de su raya, para no salirse por el borde.
+        .when(g.ya != null, (el) => el.child(div().absolute().left(P(g.ya)).w(66).ml(g.ya > (g.h0 + g.h1) / 2 ? -70 : 4).flex()
+          .when(g.ya > (g.h0 + g.h1) / 2, (e) => e.justify_end())
+          .child(div().px(2).text_size(10).font_semibold().text_color(NARANJA).bg(t.background).child(`ahora ${hhmm(g.ya)}`)))));
+    const quien = (f) => h_flex().gap(6).items_center().min_w(0)
+      .when(Boolean(f.quien), (e) => e.child(div().flex_none().text_size(10).font_semibold().text_color(EQUIPO[f.quien] || t.muted).child(f.quien.toUpperCase())))
+      .child(div().flex_none().px(6).rounded(8).bg(color[tonoChip(f)]).text_size(10.5).text_color(t.background).child(chip(f)))
+      .child(div().flex_none().text_size(10.5).text_color(f.link ? t.accent : t.dim).child(f.enlace || "sin enlace"));
+    const nombre = (f) => div().text_size(12.5).line_height("17px").font_medium().text_color(f.hecha ? t.muted : t.foreground).child(f.titulo);
+    const nota = (f) => div().text_size(11).text_color(t.dim).truncate().child(f.nota);
+    const equipos = [...new Set(g.grupos.flatMap((x) => x.filas).map((f) => f.equipo))].filter((e) => EQUIPO[e]);
+    const out = [div().pb(6).text_size(11.5).line_height("16px").text_color(t.muted).child(explicacion("punteada y clara")), revisado, this.leyenda(t, color, NARANJA, equipos.map((e) => [e, EQUIPO[e]])), eje];
+    g.grupos.forEach((x, i) => {
+      out.push(div().pt(10).pb(3).text_size(10.5).font_semibold().text_color(t.muted).child(x.titulo.toUpperCase()));
+      x.filas.forEach((f, j) => {
         const fila = (ancho
-          ? h_flex().h(44).items_center().child(v_flex().w(300).flex_none().pr(12).gap(1).child(nombre(f)).child(sub(f))).child(pista(f))
-          : v_flex().py(6).gap(3).child(nombre(f)).child(sub(f)).child(pista(f)))
+          ? h_flex().min_h(52).items_center().child(v_flex().w(IZQ).flex_none().pr(12).py(4).gap(1).child(quien(f)).child(nombre(f)).child(nota(f))).child(pista(f))
+          : v_flex().py(6).gap(2).child(quien(f)).child(nombre(f)).child(nota(f)).child(div().pt(3).child(pista(f))))
           .id(`fila-${p.archivo}-${i}-${j}`).border_t(1).border_color(t.border).cursor_pointer().hover((s) => s.bg(t.hover));
         out.push(/^https?:\/\//.test(f.link) ? fila.on_click((_e, cx) => cx.open_url(f.link)) : fila);
       });
     });
-    return out;
+    return [...out, ...this.pie(p, g, t)];
+  }
+
+  // La leyenda, arriba del eje como en el artefacto: los chips y qué es cada barra. Lo estimado va punteado y no rayado:
+  // gpui solo raya trazos de un lienzo (Background.pattern_slash), no el fondo de un div.
+  leyenda(t, color, NARANJA, equipos) {
+    const chipL = ([c, tono, dice]) => h_flex().gap(4).items_center()
+      .child(div().px(6).rounded(8).bg(color[tono]).text_size(10.5).text_color(t.background).child(c))
+      .when(Boolean(dice), (e) => e.child(div().text_size(11).text_color(t.dim).child(dice)));
+    const barraL = (texto, el, w = 22) => h_flex().gap(5).items_center().child(el.w(w).h(10).rounded(3)).child(div().text_size(11).text_color(t.dim).child(texto));
+    return v_flex().pb(8).gap(5)
+      .when(equipos.length > 0, (e) => e.child(h_flex().flex_wrap().gap_x(12).gap_y(4).children(equipos.map(([n, c]) =>
+        h_flex().gap(5).items_center().child(div().size(10).rounded(3).bg(c)).child(div().text_size(11).text_color(t.dim).child(n))))))
+      .child(h_flex().flex_wrap().gap_x(12).gap_y(4).children(LEYENDA.map(chipL))
+        .child(div().text_size(11).text_color(t.dim).child("sin ritmo, su estado")))
+      .child(h_flex().flex_wrap().gap_x(12).gap_y(4)
+        .child(barraL("medida o escrita", div().bg(color.curso).opacity(0.92)))
+        .child(barraL("estimada", div().relative().border_1().border_dashed().border_color(color.curso).child(div().absolute().inset_0().bg(color.curso).opacity(0.28))))
+        .child(barraL("terminada", div().bg(color.hecha).opacity(0.45)))
+        .child(barraL("ahora", div().bg(NARANJA), 2)));
+  }
+
+  // El pie del Gantt, como el del artefacto: dos tarjetas (lo listo o ya en producción, y los riesgos) y las decisiones
+  // que esperan, que se responden aquí mismo con las tarjetas de la pestaña Decisiones (el mismo this.decisiones).
+  pie(p, g, t) {
+    const { produccion, riesgos } = pie(p, g);
+    const tarjeta = (titulo, items, vacio) => v_flex().flex_1().min_w(0).p(12).gap(6).rounded(9).border_1().border_color(t.border)
+      .child(div().text_size(12.5).font_semibold().child(titulo))
+      .children(items.length ? items.map((x) => h_flex().gap(6).items_start().text_size(11.5).text_color(t.foreground)
+        .child(div().flex_none().text_color(t.dim).child("•")).child(div().flex_1().min_w(0).child(x)))
+        : [div().text_size(11.5).text_color(t.dim).child(vacio)]);
+    const tarjetas = [tarjeta(produccion.titulo, produccion.items, produccion.titulo === "Listo hoy" ? "Nada terminado hoy todavía." : "—"),
+      tarjeta("Riesgos", riesgos, "Sin riesgos a la vista: nada bloqueado, en riesgo ni atrasado.")];
+    return [
+      (this.ancho >= 620 ? h_flex().items_start() : v_flex()).mt(12).gap(8).children(tarjetas),
+      div().pt(14).pb(6).text_size(13).font_semibold().child("Decisiones que esperan por ti"),
+      ...this.decisiones(p, t),
+    ];
   }
 }
 

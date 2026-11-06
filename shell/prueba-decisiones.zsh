@@ -23,6 +23,13 @@ python3 $py guardar veta.json D7 Hoy app >/dev/null # cambiar de opinión pisa l
 for malo in "veta.json D7 Quizás" "veta.json D99 Hoy" "../veta.json D7 Hoy" "presupuesto.json D7 Hoy" "nada.json D7 Hoy"; do
   python3 $py guardar ${=malo} app 2>/dev/null && falla "aceptó: $malo"
 done
+# Texto libre: con la opción, o solo; vacío o de más de 1000 caracteres, no.
+python3 $py guardar veta.json D7 Hoy app "pero antes de las 12" >/dev/null
+[[ $(jq -r '.D7.respuesta + "|" + .D7.texto' $tmp/.herdr/flota/respuestas/veta.json) == "Hoy|pero antes de las 12" ]] || falla "opción con texto"
+python3 $py guardar veta.json D9 "" app "ninguna de las dos" >/dev/null
+[[ $(jq -r '.D9.respuesta + "|" + .D9.texto' $tmp/.herdr/flota/respuestas/veta.json) == "|ninguna de las dos" ]] || falla "solo texto"
+python3 $py guardar veta.json D9 "" app "   " 2>/dev/null && falla "aceptó vacío"
+python3 $py guardar veta.json D9 "" app "$(printf 'x%.0s' {1..1001})" 2>/dev/null && falla "aceptó 1001 caracteres"
 # Una cerrada ya no se responde.
 jq '.decisiones[0].estado = "cerrada"' $here/ejemplos/veta.json > $tmp/.herdr/flota/cerrada.json
 python3 $py guardar cerrada.json D7 Hoy app 2>/dev/null && falla "respondió una cerrada"
@@ -44,6 +51,9 @@ host=bici.tail0.ts.net
 [[ $(post -H 'X-Flota: 1' -d '{"archivo":"veta.json","id":"D9","respuesta":"Otra"}') == 400 ]] || falla "opción inventada"
 [[ $(post -H 'X-Flota: 1' -d $cuerpo) == 200 ]] || falla "local, con X-Flota"
 [[ $(jq -r '.D9.respuesta + " " + .D9.desde + " " + .D7.respuesta' $tmp/.herdr/flota/respuestas/veta.json) == "Parchear web Hoy" ]] || falla "web no guardó D9"
+[[ $(post -H 'X-Flota: 1' -d '{"archivo":"veta.json","id":"D9","respuesta":"","texto":"lo hablamos"}') == 200 ]] || falla "web, solo texto"
+[[ $(jq -r '.D9.texto' $tmp/.herdr/flota/respuestas/veta.json) == "lo hablamos" ]] || falla "web no guardó el texto"
+[[ $(post -H 'X-Flota: 1' -d '{"archivo":"veta.json","id":"D9","respuesta":""}') == 400 ]] || falla "web, nada"
 # Por el tailnet: el dueño de este Mac, con el origen de la página.
 duenio=$(tailscale status --json 2>/dev/null | jq -r '.User[(.Self.UserID|tostring)].LoginName' 2>/dev/null || true)
 if [[ -n $duenio && $duenio != null ]]; then
