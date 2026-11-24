@@ -50,7 +50,7 @@ rodeo, así que antes se le pregunta a Juan. Ojo: al quedar `done` herdr-task bo
 limpios.
 
 Modelo y esfuerzo salen de la cabecera de routing de cada tarjeta: `herdr-task add --agent codex --model
-gpt-5.6-sol --effort max` (o `high`). Comprueba que el modelo esté en `~/.codex/models_cache.json`.
+gpt-6.2-sol --effort max` (o `high`). Comprueba que el modelo esté en `~/.codex/models_cache.json`.
 
 ## Falla en el iPhone
 

@@ -37,7 +37,7 @@ case $asiento in
     [[ $asiento == ccp ]] && cfg=$HOME/.claude || cfg=$HOME/.claude-work
     cmd=(env CLAUDE_CONFIG_DIR=$cfg claude --model $modelo --effort $esfuerzo --dangerously-skip-permissions) ;;
   codex)
-    modelo=${o_m[-1]:-gpt-6.1-sol}
+    modelo=${o_m[-1]:-gpt-6.2-sol}
     # Un nombre que Codex no conoce solo avisa «metadata not found» y luego falla: se para aquí.
     cache=${CODEX_HOME:-$HOME/.codex}/models_cache.json
     if [[ -f $cache ]]; then

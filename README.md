@@ -311,8 +311,8 @@ bin/flota-lanzar --asiento ccw --producto english-learning --rol autor --tarea E
   (`~/.claude`, `~/.claude-work`); `codex` lanza `codex --no-daemon --no-alt-screen` (en línea, para que la respuesta se lea en el teléfono) con `--sandbox workspace-write
   --ask-for-approval never`.
 - **Modelo y esfuerzo:** `--modelo` y `--esfuerzo`. Por defecto `opus high` en Claude y
-  `gpt-6.1-sol high` en Codex. Un modelo de Codex que no esté en `~/.codex/models_cache.json` se rechaza
-  antes de lanzar (los nombres cortos no existen; hoy el barato es `gpt-6-luna`, no hay `gpt-6.1-luna`).
+  `gpt-6.2-sol high` en Codex. Un modelo de Codex que no esté en `~/.codex/models_cache.json` se rechaza
+  antes de lanzar (los nombres cortos no existen; hoy el de trabajo es `gpt-6.2-sol` y el caro `gpt-6.2-astra`; el barato sigue siendo `gpt-6-luna`, no hay `gpt-6.2-luna`).
 - **Etiquetas:** `flota.producto`, `flota.rol`, `flota.asiento`, `flota.padre` (por defecto, el terminal
   que lo lanza) y `flota.tarea`. Si el padre es un terminal vivo, hc le avisa cuando el hijo se bloquea.
 - **Nombre:** `<rol>-<tarea>` en minúsculas, 24 caracteres como mucho, para que se lea en el teléfono
