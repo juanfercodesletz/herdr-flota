@@ -1,6 +1,9 @@
-// Prueba del tema de la web (web/flota-tema): cada variante define todas las variables de color que el ds.css de
-// Shepherdr pone en :root (claro u oscuro), en sus tres bloques (claro, oscuro del sistema y oscuro elegido). Falla
-// cuando una actualización de Shepherdr agrega una que el tema no tiene. Uso: node shell/prueba-tema.mjs [ruta de ds.css]
+// Prueba del tema de la web (web/flota-tema): cada variante define todas las variables que el ds.css de Shepherdr pone
+// en :root (claro y oscuros), en sus tres bloques (claro, oscuro del sistema y oscuro elegido). Falla cuando una
+// actualización de Shepherdr agrega una que el tema no tiene. Uso: node shell/prueba-tema.mjs [ruta de ds.css]
+// ponytail: a propósito simple y estricta. Exige todas las variables de :root, sean color o no (hoy son solo colores;
+// si Shepherdr agrega ahí un tamaño, avisa de más), y solo lee las formas exactas de :root: un selector con :root y
+// variables que no sea una de ellas hace fallar la prueba con su nombre, en vez de adivinar qué cubre.
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 
@@ -8,55 +11,37 @@ const ds = readFileSync(process.argv[2] || `${homedir()}/Codes/Personal/shepherd
 const tema = readFileSync(new URL('../web/flota-tema/tema.css', import.meta.url), 'utf8')
 const cliente = readFileSync(new URL('../web/flota-tema/client.tsx', import.meta.url), 'utf8')
 
-/** un selector agrupado, por sus comas de arriba (no las de dentro de :is() o :not()) */
-function partir(sels) {
-  const out = ['']
-  let hondo = 0
-  for (const c of sels) {
-    if (c === '(') hondo++
-    if (c === ')') hondo--
-    if (c === ',' && !hondo) out.push('')
-    else out[out.length - 1] += c
-  }
-  return out
-}
-/** cada regla sin llaves dentro (la de dentro de un @media también), un selector agrupado por cada uno de los suyos:
- *  {selector sin espacios: [[variable, valor]…]} */
-function reglas(css) {
-  const r = {}
-  for (const [, sels, cuerpo] of css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g))
-    for (const sel of partir(sels)) {
-      const k = sel.replace(/\s+/g, '')
-      for (const [, v, val] of cuerpo.matchAll(/(--[\w-]+)\s*:([^;]*)/g)) (r[k] ??= []).push([v, val.trim()])
-    }
-  return r
-}
-// ponytail: color es todo lo que no sea tamaños, números o tiempos (nombres, var() de un color, hex, rgb()…): mejor
-// un aviso de más que dejar pasar un color nuevo. Un var() se mira por el valor al que apunta.
-const MEDIDA = /^((-?[\d.]+(px|rem|em|%|ms|s|vh|vw|dvh|fr|deg)?|calc\(.*\)|!important)\s*)+$/i
-const esColor = (val, valores) => {
-  for (let i = 0; i < 5 && val.includes('var('); i++) val = val.replace(/var\(\s*(--[\w-]+)\s*(?:,([^)]*))?\)/g, (_, n, otro) => valores[n] ?? otro?.trim() ?? '')
-  return !MEDIDA.test(val.trim())
-}
-const MODOS = [['claro', ''], ['oscuro del sistema', ':not([data-theme="light"])'], ['oscuro elegido', '[data-theme="dark"]']]
-
-const de = reglas(ds)
-const valores = Object.fromEntries(MODOS.flatMap(([, m]) => de[`:root${m}`] ?? []))
-const colores = [...new Set(MODOS.flatMap(([, m]) => (de[`:root${m}`] ?? []).filter(([, val]) => esColor(val, valores)).map(([v]) => v)))]
-if (colores.length < 15) throw new Error(`ds.css: solo ${colores.length} variables de color en :root`)
-
-const t = reglas(tema)
-const variantes = [...new Set(Object.keys(t).map((k) => k.match(/^:root\[data-flota-tema="(\w+)"\]$/)?.[1]).filter(Boolean))]
-const declaradas = JSON.parse(cliente.match(/const VARIANTES = (\[[^\]]*\])/)[1].replaceAll("'", '"'))
 let fallas = 0
 const falla = (s) => { fallas++; console.log(`FALLA ${s}`) }
-if (variantes.join() !== declaradas.join()) falla(`client.tsx dice ${declaradas.join(', ')} y tema.css trae ${variantes.join(', ')}`)
+const MODOS = { '': 'claro', ':not([data-theme="light"])': 'oscuro del sistema', '[data-theme="dark"]': 'oscuro elegido' }
 
-for (const v of variantes) for (const [cual, m] of MODOS) {
-  const tiene = new Set((t[`:root[data-flota-tema="${v}"]${m}`] ?? []).map(([n]) => n))
-  if (!tiene.size) { falla(`${v}: no tiene su bloque ${cual}`); continue }
-  const faltan = colores.filter((c) => !tiene.has(c))
+/** cada regla sin llaves dentro (también la de dentro de un @media) que declara variables y nombra :root:
+ *  [selector sin espacios, [variables]] */
+const raices = (css) =>
+  [...css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .map(([, sel, cuerpo]) => [sel.replace(/\s+/g, ''), [...cuerpo.matchAll(/(--[\w-]+)\s*:/g)].map((m) => m[1])])
+    .filter(([sel, vars]) => sel.includes(':root') && vars.length)
+
+const variables = new Set()
+for (const [sel, vars] of raices(ds)) {
+  if (sel.startsWith(':root') && sel.slice(5) in MODOS) vars.forEach((v) => variables.add(v))
+  else falla(`ds.css: no sé leer el selector ${sel}`)
+}
+if (variables.size < 15) falla(`ds.css: solo ${variables.size} variables en :root`)
+
+const tiene = {}
+for (const [sel, vars] of raices(tema)) {
+  const m = sel.match(/^:root\[data-flota-tema="(\w+)"\](.*)$/)
+  if (m && m[2] in MODOS) vars.forEach((v) => ((tiene[m[1]] ??= {})[m[2]] ??= new Set()).add(v))
+  else falla(`tema.css: no sé leer el selector ${sel}`)
+}
+
+const variantes = Object.keys(tiene)
+const declaradas = JSON.parse(cliente.match(/const VARIANTES = (\[[^\]]*\])/)[1].replaceAll("'", '"'))
+if (variantes.join() !== declaradas.join()) falla(`client.tsx dice ${declaradas.join(', ')} y tema.css trae ${variantes.join(', ')}`)
+for (const v of variantes) for (const [m, cual] of Object.entries(MODOS)) {
+  const faltan = [...variables].filter((n) => !tiene[v][m]?.has(n))
   if (faltan.length) falla(`${v} (${cual}): le falta ${faltan.join(' ')}`)
 }
-console.log(fallas ? `${fallas} fallas` : `ok: ${variantes.join(', ')} definen las ${colores.length} variables de color de Shepherdr en claro y oscuro`)
+console.log(fallas ? `${fallas} fallas` : `ok: ${variantes.join(', ')} definen las ${variables.size} variables de :root de Shepherdr en claro y oscuro`)
 process.exit(fallas ? 1 : 0)

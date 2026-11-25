@@ -286,8 +286,9 @@ Ajustes › Tema): **Tinta** (papel y tinta, Literata), **Atom** (los colores de
 se guarda aparte para cada valor de `DEFECTO`: al cambiarlo, manda el nuevo). Solo pisa variables, la letra, los tamaños, unos radios y el orden visual de la
 barra lateral; `tema.css` dice qué clases de Shepherdr nombra.
 
-Prueba: `node shell/prueba-tema.mjs` falla si el `:root` del `ds.css` de Shepherdr trae un color que alguna variante no
-define, en claro o en oscuro (pásale otra ruta de `ds.css` como argumento).
+Prueba: `node shell/prueba-tema.mjs` falla si el `:root` del `ds.css` de Shepherdr trae una variable (hoy, solo colores)
+que alguna variante no define, en claro o en oscuro, o un selector con `:root` que no sabe leer (pásale otra ruta de
+`ds.css` como argumento).
 
 ## Perfil de Claude de cada chat
 
