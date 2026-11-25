@@ -281,8 +281,8 @@ de mentira).
 aplicándose tras cada `shepherdr update`. Tres variantes, cada una con su claro y su oscuro (los que se eligen en
 Ajustes › Tema): **Tinta** (papel y tinta, Literata), **Atom** (los colores de Herdr, JetBrains Mono) y **Nítida**
 (más contraste y compacta, Atkinson Hyperlegible). Las letras van en el plugin (`fuentes/`, licencia OFL). Por defecto,
-ninguna: `?tema=tinta|atom|nitida` en la URL muestra una (`?tema=original`, la de Shepherdr), y dejar una fija es
-cambiar `DEFECTO` en `client.tsx`. Solo pisa variables, la letra, los tamaños, unos radios y el orden visual de la
+ninguna: `?tema=tinta|atom|nitida` en la URL la pone en ese aparato hasta otro `?tema=` (`?tema=original`, la de
+Shepherdr), y dejar una fija para todos es cambiar `DEFECTO` en `client.tsx` (eso olvida lo elegido en cada aparato). Solo pisa variables, la letra, los tamaños, unos radios y el orden visual de la
 barra lateral; `tema.css` dice qué clases de Shepherdr nombra.
 
 Prueba: `node shell/prueba-tema.mjs` falla si el `:root` del `ds.css` de Shepherdr trae un color que alguna variante no
