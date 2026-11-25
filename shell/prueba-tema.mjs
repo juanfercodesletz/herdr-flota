@@ -8,24 +8,41 @@ const ds = readFileSync(process.argv[2] || `${homedir()}/Codes/Personal/shepherd
 const tema = readFileSync(new URL('../web/flota-tema/tema.css', import.meta.url), 'utf8')
 const cliente = readFileSync(new URL('../web/flota-tema/client.tsx', import.meta.url), 'utf8')
 
+/** un selector agrupado, por sus comas de arriba (no las de dentro de :is() o :not()) */
+function partir(sels) {
+  const out = ['']
+  let hondo = 0
+  for (const c of sels) {
+    if (c === '(') hondo++
+    if (c === ')') hondo--
+    if (c === ',' && !hondo) out.push('')
+    else out[out.length - 1] += c
+  }
+  return out
+}
 /** cada regla sin llaves dentro (la de dentro de un @media también), un selector agrupado por cada uno de los suyos:
  *  {selector sin espacios: [[variable, valor]…]} */
 function reglas(css) {
   const r = {}
   for (const [, sels, cuerpo] of css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g))
-    for (const sel of sels.split(',')) {
+    for (const sel of partir(sels)) {
       const k = sel.replace(/\s+/g, '')
       for (const [, v, val] of cuerpo.matchAll(/(--[\w-]+)\s*:([^;]*)/g)) (r[k] ??= []).push([v, val.trim()])
     }
   return r
 }
-// ponytail: color es todo lo que no sea un tamaño, un número o un tiempo (nombres, var(), hex, rgb()…): mejor un
-// aviso de más que dejar pasar un color nuevo
-const esColor = (val) => !/^(-?[\d.]+(px|rem|em|%|ms|s|vh|vw|dvh|fr|deg)?|calc\(.*\))$/i.test(val)
+// ponytail: color es todo lo que no sea tamaños, números o tiempos (nombres, var() de un color, hex, rgb()…): mejor
+// un aviso de más que dejar pasar un color nuevo. Un var() se mira por el valor al que apunta.
+const MEDIDA = /^((-?[\d.]+(px|rem|em|%|ms|s|vh|vw|dvh|fr|deg)?|calc\(.*\)|!important)\s*)+$/i
+const esColor = (val, valores) => {
+  for (let i = 0; i < 5 && val.includes('var('); i++) val = val.replace(/var\(\s*(--[\w-]+)\s*(?:,([^)]*))?\)/g, (_, n, otro) => valores[n] ?? otro?.trim() ?? '')
+  return !MEDIDA.test(val.trim())
+}
 const MODOS = [['claro', ''], ['oscuro del sistema', ':not([data-theme="light"])'], ['oscuro elegido', '[data-theme="dark"]']]
 
 const de = reglas(ds)
-const colores = [...new Set(MODOS.flatMap(([, m]) => (de[`:root${m}`] ?? []).filter(([, val]) => esColor(val)).map(([v]) => v)))]
+const valores = Object.fromEntries(MODOS.flatMap(([, m]) => de[`:root${m}`] ?? []))
+const colores = [...new Set(MODOS.flatMap(([, m]) => (de[`:root${m}`] ?? []).filter(([, val]) => esColor(val, valores)).map(([v]) => v)))]
 if (colores.length < 15) throw new Error(`ds.css: solo ${colores.length} variables de color en :root`)
 
 const t = reglas(tema)
