@@ -18,34 +18,35 @@
 FLOTA_REPO=${${(%):-%x}:a:h:h}
 : ${FLOTA_ASIENTOS:=$FLOTA_REPO/shell/asientos}
 
+# Un CLAUDE_CONFIG_DIR ya puesto no frena nada de esto: el core de Shepherdr le pasa a cada terminal el
+# entorno de quien lo arrancó (24-nov-2026: arrancado desde una sesión ccp, las tareas de ccw volvían con
+# «No conversation found»). Una conversación solo se reanuda en su perfil, y una tarea va al de su carpeta.
 claude() {
-  if [[ -z "$CLAUDE_CONFIG_DIR" ]]; then
-    local id="" prev="" a dir f reanuda=""
-    local -a hits
-    for a in "$@"; do
-      [[ "$prev" == (--resume|-r) ]] && id="$a"
-      [[ "$a" == --resume=* ]] && id="${a#--resume=}"
-      [[ "$a" == (-r|--resume|--resume=*|-c|--continue) ]] && reanuda=1
-      prev="$a"
-    done
-    if [[ -n "$id" ]]; then
-      f="${FLOTA_PERFIL_DIR:-$HOME/.herdr/flota/perfil}/$id"
-      if [[ -f "$f" ]]; then
-        dir=$(<"$f")
-        if [[ -n "$dir" ]]; then CLAUDE_CONFIG_DIR="$dir" command claude "$@"; else command claude "$@"; fi
+  local id="" prev="" a dir f reanuda=""
+  local -a hits
+  for a in "$@"; do
+    [[ "$prev" == (--resume|-r) ]] && id="$a"
+    [[ "$a" == --resume=* ]] && id="${a#--resume=}"
+    [[ "$a" == (-r|--resume|--resume=*|-c|--continue) ]] && reanuda=1
+    prev="$a"
+  done
+  if [[ -n "$id" ]]; then
+    f="${FLOTA_PERFIL_DIR:-$HOME/.herdr/flota/perfil}/$id"
+    if [[ -f "$f" ]]; then
+      dir=$(<"$f")
+      if [[ -n "$dir" ]]; then CLAUDE_CONFIG_DIR="$dir" command claude "$@"; else (unset CLAUDE_CONFIG_DIR; command claude "$@"); fi
+      return
+    fi
+    for dir in $FLOTA_CLAUDE_PERFILES; do
+      hits=($dir/projects/*/$id.jsonl(N))
+      if (( $#hits )); then
+        CLAUDE_CONFIG_DIR="$dir" command claude "$@"
         return
       fi
-      for dir in $FLOTA_CLAUDE_PERFILES; do
-        hits=($dir/projects/*/$id.jsonl(N))
-        if (( $#hits )); then
-          CLAUDE_CONFIG_DIR="$dir" command claude "$@"
-          return
-        fi
-      done
-    elif [[ -n "$HERDR_BROWSER_TASK" && -z "$reanuda" ]]; then
-      dir=$(flota-perfil)
-      if [[ -n "$dir" ]]; then CLAUDE_CONFIG_DIR="$dir" command claude "$@"; return; fi
-    fi
+    done
+  elif [[ -n "$HERDR_BROWSER_TASK" && -z "$reanuda" ]]; then
+    dir=$(flota-perfil)
+    if [[ -n "$dir" ]]; then CLAUDE_CONFIG_DIR="$dir" command claude "$@"; return; fi
   fi
   command claude "$@"
 }

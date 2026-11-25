@@ -36,7 +36,10 @@ check ninguno --resume id-p           # sin registro, en el normal: a secas, com
 check ninguno --resume no-existe
 check ninguno -p hola
 check ninguno --resume                # sin id: el selector de siempre
-CLAUDE_CONFIG_DIR=$tmp/p check $tmp/p --resume id-reg-w   # perfil ya puesto: no se toca
+CLAUDE_CONFIG_DIR=$tmp/p check $tmp/w --resume id-reg-w   # perfil heredado del core: manda el registro
+CLAUDE_CONFIG_DIR=$tmp/w check ninguno --resume id-reg-vacio   # y una registrada a secas vuelve a secas
+CLAUDE_CONFIG_DIR=$tmp/p check $tmp/w --resume id-w       # sin registro: donde está la conversación
+CLAUDE_CONFIG_DIR=$tmp/p check $tmp/p -p hola             # fuera de una tarea, el perfil puesto se respeta
 
 # Tareas de Shepherdr: perfil por carpeta y por cuota, con cupos falsos (techo 90 de calc.js).
 mkdir -p $tmp/flota/cupos $tmp/Letz/repo $tmp/Personal/otro $tmp/suelta
@@ -72,7 +75,7 @@ cupo ccw 100 100; cupo ccp 10 10
 en $tmp/Letz/repo $tmp/w --resume id-reg-w   # reanudar nunca cambia de perfil, aunque esté agotado
 en $tmp/Letz/repo ninguno --continue
 en $tmp/Personal/otro $tmp/w --resume id-reg-w
-(cd $tmp/Personal/otro && CLAUDE_CONFIG_DIR=$tmp/w HOME=$tmp HERDR_BROWSER_TASK=x#1 check $tmp/w -p hola)  # perfil ya puesto
+(cd $tmp/Personal/otro && CLAUDE_CONFIG_DIR=$tmp/w HOME=$tmp HERDR_BROWSER_TASK=x#1 check $tmp/p -p hola)  # perfil heredado del core: manda la carpeta
 FLOTA_ASIENTOS=$tmp/no-existe en $tmp/Letz/repo ninguno -p hola   # sin mapa: como siempre
 
 # Los dos agotados: el Backup agent de Shepherdr toma la tarea con Codex cuando Claude se detiene.
@@ -86,4 +89,4 @@ if [[ -d $sh/herdr_task ]]; then
 else
   backup="(Backup sin probar: no encontré Shepherdr)"
 fi
-print "ok: 11 casos de reanudar + hook + 19 de tarea por cuota $backup"
+print "ok: 14 casos de reanudar + hook + 19 de tarea por cuota $backup"
