@@ -8,16 +8,20 @@ const ds = readFileSync(process.argv[2] || `${homedir()}/Codes/Personal/shepherd
 const tema = readFileSync(new URL('../web/flota-tema/tema.css', import.meta.url), 'utf8')
 const cliente = readFileSync(new URL('../web/flota-tema/client.tsx', import.meta.url), 'utf8')
 
-/** cada regla sin llaves dentro (la de dentro de un @media también): {selector sin espacios: [[variable, valor]…]} */
+/** cada regla sin llaves dentro (la de dentro de un @media también), un selector agrupado por cada uno de los suyos:
+ *  {selector sin espacios: [[variable, valor]…]} */
 function reglas(css) {
   const r = {}
-  for (const [, sel, cuerpo] of css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
-    const k = sel.replace(/\s+/g, '')
-    for (const [, v, val] of cuerpo.matchAll(/(--[\w-]+)\s*:([^;]*)/g)) (r[k] ??= []).push([v, val.trim()])
-  }
+  for (const [, sels, cuerpo] of css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g))
+    for (const sel of sels.split(',')) {
+      const k = sel.replace(/\s+/g, '')
+      for (const [, v, val] of cuerpo.matchAll(/(--[\w-]+)\s*:([^;]*)/g)) (r[k] ??= []).push([v, val.trim()])
+    }
   return r
 }
-const esColor = (val) => /#[0-9a-f]{3,8}\b|\b(rgb|hsl|hwb|lab|lch|oklab|oklch|color-mix|color)\(|\btransparent\b|\bcurrentcolor\b/i.test(val)
+// ponytail: color es todo lo que no sea un tamaño, un número o un tiempo (nombres, var(), hex, rgb()…): mejor un
+// aviso de más que dejar pasar un color nuevo
+const esColor = (val) => !/^(-?[\d.]+(px|rem|em|%|ms|s|vh|vw|dvh|fr|deg)?|calc\(.*\))$/i.test(val)
 const MODOS = [['claro', ''], ['oscuro del sistema', ':not([data-theme="light"])'], ['oscuro elegido', '[data-theme="dark"]']]
 
 const de = reglas(ds)
