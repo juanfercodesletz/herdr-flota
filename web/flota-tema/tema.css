@@ -60,8 +60,10 @@
 
 /* la barra lateral: en Shepherdr un grupo, un espacio suelto y un espacio dentro de un grupo son la misma fila. Aquí
    el grupo es un rótulo pequeño y apagado con aire arriba, sus espacios cuelgan de él, y los sueltos se separan de
-   los grupos con el mismo aire (también tras un grupo plegado). La máquina, más arriba y apagada; el espacio abierto, en negrita. Vale igual en el
+   los grupos con el mismo aire (también tras un grupo plegado). La barra, sobre el fondo hundido (--well), como la
+   de un editor. La máquina, más arriba y apagada; el espacio abierto, en negrita. Vale igual en el
    cajón del teléfono (las mismas filas, sin .side). */
+[data-flota-tema] .side{background:var(--well)}
 [data-flota-tema] .lab.mh{margin-top:calc(var(--ft-gap) / 2)}
 [data-flota-tema] .rowx[data-heading]{margin-top:var(--ft-gap)}
 [data-flota-tema] .rowx[data-heading]>.row{min-height:calc(var(--row) - 6px);color:var(--muted);font-size:var(--sec);line-height:var(--secl);font-weight:600}
