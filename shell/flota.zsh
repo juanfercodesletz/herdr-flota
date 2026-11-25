@@ -1,4 +1,4 @@
-# herdr-flota: la función claude() que envuelve cada `claude` de la shell interactiva.
+# herdr-flota: el perfil de Claude de cada `claude` (lo aplica shell/bin/claude).
 #
 # Reanudar: `claude --resume <id>` sin perfil relanza la sesión con el perfil con que arrancó.
 # Herdr (y Shepherdr) relanzan las sesiones tras un reinicio con `claude --resume <id>`, sin
@@ -21,7 +21,13 @@ FLOTA_REPO=${${(%):-%x}:a:h:h}
 # Un CLAUDE_CONFIG_DIR ya puesto no frena nada de esto: el core de Shepherdr le pasa a cada terminal el
 # entorno de quien lo arrancó (24-nov-2026: arrancado desde una sesión ccp, las tareas de ccw volvían con
 # «No conversation found»). Una conversación solo se reanuda en su perfil, y una tarea va al de su carpeta.
-claude() {
+#
+# No es una función: Shepherdr 3.2 lanza sus agentes con `sh -c "claude …"`, que no ve las funciones de
+# zsh. Es el ejecutable shell/bin/claude, primero en el PATH de toda shell interactiva (y de sus hijos).
+[[ -o interactive ]] && path=($FLOTA_REPO/shell/bin ${path:#$FLOTA_REPO/shell/bin})
+
+# El perfil que le toca a `claude "$@"`: su carpeta, «-» para a secas, o nada para no tocar el entorno.
+flota-claude-dir() {
   local id="" prev="" a dir f reanuda=""
   local -a hits
   for a in "$@"; do
@@ -34,21 +40,16 @@ claude() {
     f="${FLOTA_PERFIL_DIR:-$HOME/.herdr/flota/perfil}/$id"
     if [[ -f "$f" ]]; then
       dir=$(<"$f")
-      if [[ -n "$dir" ]]; then CLAUDE_CONFIG_DIR="$dir" command claude "$@"; else (unset CLAUDE_CONFIG_DIR; command claude "$@"); fi
+      print -r -- "${dir:--}"
       return
     fi
     for dir in $FLOTA_CLAUDE_PERFILES; do
       hits=($dir/projects/*/$id.jsonl(N))
-      if (( $#hits )); then
-        CLAUDE_CONFIG_DIR="$dir" command claude "$@"
-        return
-      fi
+      (( $#hits )) && { print -r -- "$dir"; return }
     done
   elif [[ -n "$HERDR_BROWSER_TASK" && -z "$reanuda" ]]; then
-    dir=$(flota-perfil)
-    if [[ -n "$dir" ]]; then CLAUDE_CONFIG_DIR="$dir" command claude "$@"; return; fi
+    flota-perfil
   fi
-  command claude "$@"
 }
 
 # El CLAUDE_CONFIG_DIR para una tarea nueva en $PWD (nada si el mapa no da perfil).

@@ -23,8 +23,12 @@ echo 'basura' | sh $hook; echo '{}' | sh $hook
 [[ $(ls $tmp/reg | wc -l) -eq 3 ]] || { print "FALLA: el hook anotó entradas sin id"; exit 1; }
 
 source ${0:a:h}/flota.zsh
-command() { [[ $1 == claude ]] && { print -r -- "${CLAUDE_CONFIG_DIR:-ninguno}"; return; }; builtin command "$@"; }
-check() { local got=$(claude "${@:2}"); [[ $got == $1 ]] || { print "FALLA: claude ${@:2} -> $got (esperaba $1) en ${funcfiletrace[-1]}"; exit 1; }; }
+# Con qué perfil correría: el que da flota-claude-dir sobre el entorno («ninguno» = a secas).
+check() {
+  local d=$(flota-claude-dir "${@:2}") got
+  case $d in -) got=ninguno ;; "") got=${CLAUDE_CONFIG_DIR:-ninguno} ;; *) got=$d ;; esac
+  [[ $got == $1 ]] || { print "FALLA: claude ${@:2} -> $got (esperaba $1) en ${funcfiletrace[-1]}"; exit 1; }
+}
 
 check ninguno --resume id-reg-vacio   # registrada a secas: sigue a secas
 check $tmp/p --resume id-reg-p        # registrada ccp: vuelve como ccp
@@ -40,6 +44,11 @@ CLAUDE_CONFIG_DIR=$tmp/p check $tmp/w --resume id-reg-w   # perfil heredado del 
 CLAUDE_CONFIG_DIR=$tmp/w check ninguno --resume id-reg-vacio   # y una registrada a secas vuelve a secas
 CLAUDE_CONFIG_DIR=$tmp/p check $tmp/w --resume id-w       # sin registro: donde está la conversación
 CLAUDE_CONFIG_DIR=$tmp/p check $tmp/p -p hola             # fuera de una tarea, el perfil puesto se respeta
+
+mkdir -p $tmp/bin; print -l '#!/bin/sh' 'echo "${CLAUDE_CONFIG_DIR:-ninguno}"' > $tmp/bin/claude; chmod +x $tmp/bin/claude
+shim() { PATH=${hook:h}/bin:$tmp/bin:$PATH FLOTA_CLAUDE_PERFILES=$tmp/w CLAUDE_CONFIG_DIR=$tmp/p sh -c 'claude "$@"' sh "$@" }
+[[ $(shim --resume id-reg-w) == $tmp/w && $(shim --resume id-reg-vacio) == ninguno && $(shim -p hola) == $tmp/p ]] \
+  || { print "FALLA: shell/bin/claude lanzado con sh -c"; exit 1; }
 
 # Tareas de Shepherdr: perfil por carpeta y por cuota, con cupos falsos (techo 90 de calc.js).
 mkdir -p $tmp/flota/cupos $tmp/Letz/repo $tmp/Personal/otro $tmp/suelta

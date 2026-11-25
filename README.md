@@ -97,7 +97,11 @@ Cada paso se prueba en la app antes de seguir (`herdr-app check`, `herdr-app sho
    [ -f ~/Codes/Personal/herdr-flota/shell/flota.zsh ] && source ~/Codes/Personal/herdr-flota/shell/flota.zsh
    ```
 
-   y agrega el hook que anota el perfil de cada sesión al arrancar, en el `settings.json` de
+   `flota.zsh` pone `shell/bin/claude` primero en el PATH: un ejecutable, no una función, porque Shepherdr 3.2
+   lanza sus agentes con `sh -c "claude …"`. Decide el perfil aunque ya venga un `CLAUDE_CONFIG_DIR` heredado (el
+   core de Shepherdr le pasa a cada terminal el entorno de quien lo arrancó).
+
+   Agrega el hook que anota el perfil de cada sesión al arrancar, en el `settings.json` de
    **cada** perfil (`~/.claude`, `~/.claude-work`), dentro de `hooks.SessionStart`:
 
    ```json
@@ -277,7 +281,7 @@ Cada chat y cada tarea con Claude dice en qué perfil corre: `ccp` (`CLAUDE_CONF
 - **Web (el iPhone):** un chip «Claude ccp» en la cabecera del Assistant (en el teléfono, al final del subtítulo) y
   otro sobre la caja de mensaje de cada tarea. Tocarlo abre una hoja con sus MCP.
 - **De dónde sale:** `mods/flota-entorno/perfiles.py` lee el `CLAUDE_CONFIG_DIR` del proceso `claude` que corre en
-  cada terminal de hc (su entorno, con `ps`), no el mapa `shell/asientos`. Tras un reinicio, `claude()` de `flota.zsh`
+  cada terminal de hc (su entorno, con `ps`), no el mapa `shell/asientos`. Tras un reinicio, `shell/bin/claude`
   relanza cada sesión con su perfil y el lector lo ve igual. Si el entorno no se puede leer, dice `?`.
 - **Los MCP:** solo los nombres (nunca env ni cabeceras), por origen: del perfil (`mcpServers` de su `.claude.json`),
   de esta carpeta (su entrada en `projects`), del proyecto (`.mcp.json` de la carpeta y las de arriba) y de los plugins

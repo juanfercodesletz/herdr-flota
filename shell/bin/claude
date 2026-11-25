@@ -1,0 +1,12 @@
+#!/bin/zsh -f
+# herdr-flota: `claude` con el perfil que le toca (flota.zsh dice cuál y por qué). Va primero en el PATH.
+aqui=${0:a:h}
+path=(${path:#$aqui})   # el claude de verdad, no este
+source $aqui/../flota.zsh
+dir=$(flota-claude-dir "$@")
+case $dir in
+  -) unset CLAUDE_CONFIG_DIR ;;
+  ?*) export CLAUDE_CONFIG_DIR=$dir ;;
+esac
+(( $+commands[claude] )) || { print -u2 "flota: no encuentro claude en el PATH"; exit 127 }
+exec $commands[claude] "$@"
