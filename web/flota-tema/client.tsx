@@ -9,7 +9,7 @@ import './tema.css'
 
 const VARIANTES = ['tinta', 'atom', 'nitida']
 /** la variante de siempre; '' deja la de Shepherdr */
-const DEFECTO = ''
+const DEFECTO = 'nitida'
 /** lo recordado vale mientras DEFECTO no cambie: elegir otra por defecto borra las pruebas de cada aparato */
 const CLAVE = `flota.tema.${DEFECTO}`
 
