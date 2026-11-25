@@ -84,10 +84,10 @@ EOF
 # puede servir una carpeta). `shepherdr update` reconstruye la web solo si el plugin cambió. El plugin se viste con
 # el sistema de diseño de la web (web/src/ds.css) y su propio .css: la web 3.2 no trae Tailwind.
 # Iniciativas igual, con iniciativas.js y la foto iniciativas.json. El mismo servidor (respuestas.py) recibe las
-# respuestas a las Decisiones que se tocan en la web (POST /flota/respuesta).
-for p in flota-entorno:calc.js flota-iniciativas:iniciativas.js; do
+# respuestas a las Decisiones que se tocan en la web (POST /flota/respuesta). El tema (flota-tema) no tiene mod: va solo.
+for p in flota-entorno:calc.js flota-iniciativas:iniciativas.js flota-tema:; do
   name=${p%%:*} js=${p#*:} plug="${SHEPHERDR_HOME:-$HOME/.shepherdr}/plugins/$name"
-  mkdir -p "$plug" && rsync -a --delete --exclude "*.js" "$here/web/$name/" "$plug/" && rsync -a "$here/mods/$name/$js" "$plug/"
+  mkdir -p "$plug" && rsync -a --delete --exclude "*.js" "$here/web/$name/" "$plug/" && { [ -z "$js" ] || rsync -a "$here/mods/$name/$js" "$plug/"; }
   echo "  web     $name"
 done
 if [ "$(uname)" = Darwin ]; then

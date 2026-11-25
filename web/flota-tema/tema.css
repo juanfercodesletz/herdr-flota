@@ -1,0 +1,71 @@
+/* Tema de la flota (client.tsx): tres variantes sobre el sistema de diseño de Shepherdr 3.2 (web/src/ds.css), cada
+   una con su claro, su oscuro por el sistema y su oscuro elegido, como ds.css. Pisa variables (las de color de :root,
+   las de tamaño de .app, --fi-purple y --fi-now de Iniciativas), la letra, el tamaño del texto del chat, los radios
+   de unas pocas clases básicas y el orden visual de la barra lateral. Todas las variables de color de ds.css, en cada
+   bloque: shell/prueba-tema.mjs lo revisa. Las letras van en fuentes/ (OFL, solo latín): nada se baja de internet.
+   El terminal queda oscuro en todas (su texto es claro fijo en ds.css). */
+
+@font-face{font-family:"Flota Literata";src:url(./fuentes/literata-latin-wght-normal.woff2) format("woff2");font-weight:200 900;font-style:normal;font-display:swap}
+@font-face{font-family:"Flota Literata";src:url(./fuentes/literata-latin-wght-italic.woff2) format("woff2");font-weight:200 900;font-style:italic;font-display:swap}
+@font-face{font-family:"Flota Plex Mono";src:url(./fuentes/ibm-plex-mono-latin-400-normal.woff2) format("woff2");font-weight:400;font-display:swap}
+@font-face{font-family:"Flota Plex Mono";src:url(./fuentes/ibm-plex-mono-latin-500-normal.woff2) format("woff2");font-weight:500 700;font-display:swap}
+@font-face{font-family:"Flota JetBrains Mono";src:url(./fuentes/jetbrains-mono-latin-wght-normal.woff2) format("woff2");font-weight:100 800;font-style:normal;font-display:swap}
+@font-face{font-family:"Flota JetBrains Mono";src:url(./fuentes/jetbrains-mono-latin-wght-italic.woff2) format("woff2");font-weight:100 800;font-style:italic;font-display:swap}
+@font-face{font-family:"Flota Atkinson";src:url(./fuentes/atkinson-hyperlegible-next-latin-wght-normal.woff2) format("woff2");font-weight:200 800;font-style:normal;font-display:swap}
+@font-face{font-family:"Flota Atkinson";src:url(./fuentes/atkinson-hyperlegible-next-latin-wght-italic.woff2) format("woff2");font-weight:200 800;font-style:italic;font-display:swap}
+@font-face{font-family:"Flota Atkinson Mono";src:url(./fuentes/atkinson-hyperlegible-mono-latin-wght-normal.woff2) format("woff2");font-weight:200 800;font-display:swap}
+
+/* ---------- Tinta: papel y tinta. Literata (una serifa hecha para leer en pantalla), IBM Plex Mono para el código,
+   tus mensajes en azul de tinta, más aire ---------- */
+:root[data-flota-tema="tinta"]{color-scheme:light;--canvas:#fcfaf5;--well:#f6f2e9;--raised:#efe9dd;--overlay:#fffdf8;--control:rgb(70 52 20/.06);--control2:rgb(70 52 20/.11);--fg:#1d1a16;--sub:#46403a;--muted:#6b645a;--line:rgb(70 52 20/.10);--line2:rgb(70 52 20/.16);--mine:#e2e8f3;--rx:#fffdf8;--scrim:rgb(30 24 14/.3);--green:#3b6a28;--blue:#1f4e8c;--link:#1b3f9c;--amber:#93560a;--red:#b0261d;--term:#1d1a16;--shadow:0 10px 30px rgb(70 52 20/.14);--fi-purple:#6b3fa0;--fi-now:#a3470c}
+@media(prefers-color-scheme:dark){:root[data-flota-tema="tinta"]:not([data-theme="light"]){color-scheme:dark;--canvas:#15171c;--well:#101216;--raised:#1f2229;--overlay:#22252c;--control:rgb(236 228 210/.08);--control2:rgb(236 228 210/.14);--fg:#ece6d8;--sub:#d0c9ba;--muted:#a19a8d;--line:rgb(236 228 210/.08);--line2:rgb(236 228 210/.13);--mine:#25314a;--rx:#272a32;--scrim:rgb(0 0 0/.6);--green:#9cc98a;--blue:#8fb4ea;--link:#a3bff5;--amber:#e2b45c;--red:#f08a80;--term:#0e1013;--shadow:0 0 0 0 transparent;--fi-purple:#b9a0e8;--fi-now:#f0a060}}
+:root[data-flota-tema="tinta"][data-theme="dark"]{color-scheme:dark;--canvas:#15171c;--well:#101216;--raised:#1f2229;--overlay:#22252c;--control:rgb(236 228 210/.08);--control2:rgb(236 228 210/.14);--fg:#ece6d8;--sub:#d0c9ba;--muted:#a19a8d;--line:rgb(236 228 210/.08);--line2:rgb(236 228 210/.13);--mine:#25314a;--rx:#272a32;--scrim:rgb(0 0 0/.6);--green:#9cc98a;--blue:#8fb4ea;--link:#a3bff5;--amber:#e2b45c;--red:#f08a80;--term:#0e1013;--shadow:0 0 0 0 transparent;--fi-purple:#b9a0e8;--fi-now:#f0a060}
+:root[data-flota-tema="tinta"]{--ft-text:"Flota Literata",Charter,Georgia,serif;--ft-mono:"Flota Plex Mono",ui-monospace,Menlo,monospace}
+[data-flota-tema="tinta"] .app:not(.tap){--ui:15px;--uil:22px;--sec:13px;--secl:19px;--hd:52px;--row:34px;--row2:56px;--gut:20px;--side:264px;--ft-msg:17px;--ft-msgl:28px;--ft-gap:14px}
+[data-flota-tema="tinta"] .app.tap{--ui:17px;--uil:26px;--sec:15px;--secl:21px;--hd:58px;--row:46px;--row2:60px;--ft-msg:17px;--ft-msgl:27px;--ft-gap:16px}
+[data-flota-tema="tinta"] .app.phone{--hd:56px;--row:50px}
+
+/* ---------- Atom: los colores de tu Herdr (atom-one-dark y su claro) y JetBrains Mono en todo, como un editor.
+   Densa, esquinas cortas ---------- */
+:root[data-flota-tema="atom"]{color-scheme:light;--canvas:#fafafa;--well:#f0f0f1;--raised:#eaeaeb;--overlay:#fff;--control:rgb(56 58 66/.06);--control2:rgb(56 58 66/.12);--fg:#232428;--sub:#383a42;--muted:#5f626c;--line:rgb(56 58 66/.09);--line2:rgb(56 58 66/.15);--mine:#e4ebfb;--rx:#fff;--scrim:rgb(0 0 0/.3);--green:#326c31;--blue:#01709f;--link:#2f5fd4;--amber:#8a5d00;--red:#b02f20;--term:#282c34;--shadow:0 8px 24px rgb(40 44 52/.16);--fi-purple:#a626a4;--fi-now:#a14d00}
+@media(prefers-color-scheme:dark){:root[data-flota-tema="atom"]:not([data-theme="light"]){color-scheme:dark;--canvas:#282c34;--well:#21252b;--raised:#2f343e;--overlay:#2f343e;--control:rgb(171 178 191/.10);--control2:rgb(171 178 191/.18);--fg:#dcdfe4;--sub:#abb2bf;--muted:#a6acb9;--line:rgb(171 178 191/.10);--line2:rgb(171 178 191/.17);--mine:#2a3850;--rx:#353b46;--scrim:rgb(0 0 0/.55);--green:#98c379;--blue:#56b6c2;--link:#61afef;--amber:#e5c07b;--red:#f0848c;--term:#21252b;--shadow:0 8px 24px rgb(0 0 0/.35);--fi-purple:#d494e6;--fi-now:#d19a66}}
+:root[data-flota-tema="atom"][data-theme="dark"]{color-scheme:dark;--canvas:#282c34;--well:#21252b;--raised:#2f343e;--overlay:#2f343e;--control:rgb(171 178 191/.10);--control2:rgb(171 178 191/.18);--fg:#dcdfe4;--sub:#abb2bf;--muted:#a6acb9;--line:rgb(171 178 191/.10);--line2:rgb(171 178 191/.17);--mine:#2a3850;--rx:#353b46;--scrim:rgb(0 0 0/.55);--green:#98c379;--blue:#56b6c2;--link:#61afef;--amber:#e5c07b;--red:#f0848c;--term:#21252b;--shadow:0 8px 24px rgb(0 0 0/.35);--fi-purple:#d494e6;--fi-now:#d19a66}
+:root[data-flota-tema="atom"]{--ft-text:"Flota JetBrains Mono",ui-monospace,Menlo,monospace;--ft-mono:"Flota JetBrains Mono",ui-monospace,Menlo,monospace;--ft-r:4px;--ft-R:6px}
+[data-flota-tema="atom"] .app:not(.tap){--ui:13px;--uil:20px;--sec:12px;--secl:18px;--hd:44px;--row:28px;--row2:46px;--h1:15px;--gut:16px;--side:264px;--ft-msg:14px;--ft-msgl:22px;--ft-gap:10px}
+[data-flota-tema="atom"] .app.tap{--ui:16px;--uil:24px;--sec:14px;--secl:20px;--hd:52px;--row:44px;--ft-msg:15px;--ft-msgl:23px;--ft-gap:12px}
+[data-flota-tema="atom"] .app.phone{--hd:50px;--row:46px}
+
+/* ---------- Nítida: más contraste y más compacta. Negro puro sobre blanco, líneas marcadas, Atkinson Hyperlegible
+   (hecha para leerse sin confundir letras) y su mono, esquinas rectas ---------- */
+:root[data-flota-tema="nitida"]{color-scheme:light;--canvas:#fff;--well:#f4f5f7;--raised:#eceef1;--overlay:#fff;--control:rgb(0 0 0/.06);--control2:rgb(0 0 0/.13);--fg:#000;--sub:#1f2328;--muted:#4b525d;--line:rgb(0 0 0/.14);--line2:rgb(0 0 0/.26);--mine:#dbe5fb;--rx:#fff;--scrim:rgb(0 0 0/.4);--green:#08672b;--blue:#0050c8;--link:#0040c0;--amber:#874800;--red:#c0000e;--term:#000;--shadow:0 6px 16px rgb(0 0 0/.16);--fi-purple:#6d28d9;--fi-now:#b23a0a}
+@media(prefers-color-scheme:dark){:root[data-flota-tema="nitida"]:not([data-theme="light"]){color-scheme:dark;--canvas:#000;--well:#0b0c0e;--raised:#191b1f;--overlay:#141518;--control:rgb(255 255 255/.11);--control2:rgb(255 255 255/.19);--fg:#fff;--sub:#e6e8eb;--muted:#b4b9c1;--line:rgb(255 255 255/.17);--line2:rgb(255 255 255/.28);--mine:#1e2c4c;--rx:#1d1f23;--scrim:rgb(0 0 0/.7);--green:#5fe08b;--blue:#80b4ff;--link:#93c0ff;--amber:#ffc24f;--red:#ff6b6b;--term:#000;--shadow:0 0 0 0 transparent;--fi-purple:#b69bff;--fi-now:#ff9a52}}
+:root[data-flota-tema="nitida"][data-theme="dark"]{color-scheme:dark;--canvas:#000;--well:#0b0c0e;--raised:#191b1f;--overlay:#141518;--control:rgb(255 255 255/.11);--control2:rgb(255 255 255/.19);--fg:#fff;--sub:#e6e8eb;--muted:#b4b9c1;--line:rgb(255 255 255/.17);--line2:rgb(255 255 255/.28);--mine:#1e2c4c;--rx:#1d1f23;--scrim:rgb(0 0 0/.7);--green:#5fe08b;--blue:#80b4ff;--link:#93c0ff;--amber:#ffc24f;--red:#ff6b6b;--term:#000;--shadow:0 0 0 0 transparent;--fi-purple:#b69bff;--fi-now:#ff9a52}
+:root[data-flota-tema="nitida"]{--ft-text:"Flota Atkinson",system-ui,sans-serif;--ft-mono:"Flota Atkinson Mono",ui-monospace,Menlo,monospace;--ft-r:2px;--ft-R:3px}
+[data-flota-tema="nitida"] .app:not(.tap){--ui:13px;--uil:18px;--sec:12px;--secl:16px;--hd:40px;--row:26px;--row2:44px;--btn:28px;--btns:24px;--ib:26px;--tab:24px;--chip:28px;--field:28px;--gut:12px;--side:224px;--ft-msg:15px;--ft-msgl:21px;--ft-gap:8px}
+[data-flota-tema="nitida"] .app.tap{--ui:16px;--uil:22px;--sec:13px;--secl:18px;--hd:48px;--row:44px;--row2:52px;--ft-msg:16px;--ft-msgl:22px;--ft-gap:10px}
+[data-flota-tema="nitida"] .app.phone{--hd:48px;--row:44px}
+
+/* ---------- lo común: cada variante pone sus valores arriba ---------- */
+/* el fondo detrás de la página (index.html lo fija a blanco o negro) */
+:root[data-flota-tema]{background:var(--canvas)}
+/* la letra: body la pasa a todo (botones y campos la heredan); lo monoespaciado de Shepherdr (código, terminal,
+   archivos, teclas) y de Iniciativas, a la mono de la variante */
+[data-flota-tema] body{font-family:var(--ft-text);font-feature-settings:normal}
+[data-flota-tema] :is(.md code,.md pre,.code,.files,.term,.tin,.keys button,.fi-card .id,.fi-did){font-family:var(--ft-mono)}
+/* el texto del chat (Shepherdr lo fija a 16/24) */
+[data-flota-tema] .msgs{font-size:var(--ft-msg);line-height:var(--ft-msgl)}
+/* radios: Atom y Nítida los acortan en las piezas básicas (Tinta deja los de Shepherdr) */
+:is([data-flota-tema="atom"],[data-flota-tema="nitida"]) :is(.btn,.ib,.row,.rowx,.tab,.seg,.seg button,.inp){border-radius:var(--ft-r)}
+:is([data-flota-tema="atom"],[data-flota-tema="nitida"]) :is(.card,.dlg,.cbox,.b){border-radius:var(--ft-R)}
+
+/* la barra lateral: en Shepherdr un grupo, un espacio suelto y un espacio dentro de un grupo son la misma fila. Aquí
+   el grupo es un rótulo pequeño y apagado con aire arriba, sus espacios cuelgan de él, y los sueltos se separan de
+   los grupos con el mismo aire (también tras un grupo plegado). La barra, sobre el fondo hundido (--well), como la
+   de un editor. La máquina, más arriba y apagada; el espacio abierto, en negrita. Vale igual en el
+   cajón del teléfono (las mismas filas, sin .side). */
+[data-flota-tema] .side{background:var(--well)}
+[data-flota-tema] .lab.mh{margin-top:calc(var(--ft-gap) / 2)}
+[data-flota-tema] .rowx[data-heading]{margin-top:var(--ft-gap)}
+[data-flota-tema] .rowx[data-heading]>.row{min-height:calc(var(--row) - 6px);color:var(--muted);font-size:var(--sec);line-height:var(--secl);font-weight:600}
+[data-flota-tema] .rowx[data-section]+.rowx:not([data-section]){margin-top:var(--ft-gap)}
+[data-flota-tema] .rowx[data-project]>.row[aria-current="true"]{font-weight:600}

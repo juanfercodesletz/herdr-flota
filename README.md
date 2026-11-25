@@ -275,6 +275,21 @@ Pruebas: `node shell/prueba-iniciativas.mjs` (lector), `zsh shell/prueba-decisio
 HOME temporal) y `node shell/prueba-gantt-app.mjs` (el Gantt del panel del escritorio y sus decisiones, con herdr y gpui
 de mentira).
 
+## Tema de la web
+
+`web/flota-tema/` es un plugin de la web de Shepherdr que le cambia el aspecto sin tocar Shepherdr, así que sigue
+aplicándose tras cada `shepherdr update`. Tres variantes, cada una con su claro y su oscuro (los que se eligen en
+Ajustes › Tema): **Tinta** (papel y tinta, Literata), **Atom** (los colores de Herdr, JetBrains Mono) y **Nítida**
+(más contraste y compacta, Atkinson Hyperlegible). Las letras van en el plugin (`fuentes/`, licencia OFL). Por defecto,
+**Nítida** (la eligió Juan): `?tema=tinta|atom|nitida` en la URL pone otra en ese aparato hasta otro `?tema=`
+(`?tema=original`, la de Shepherdr), y cambiar la de todos es cambiar `DEFECTO` en `client.tsx` (lo elegido en cada aparato
+se guarda aparte para cada valor de `DEFECTO`: al cambiarlo, manda el nuevo). Solo pisa variables, la letra, los tamaños, unos radios y el orden visual de la
+barra lateral; `tema.css` dice qué clases de Shepherdr nombra.
+
+Prueba: `node shell/prueba-tema.mjs` falla si el `:root` del `ds.css` de Shepherdr trae una variable (hoy, solo colores)
+que alguna variante no define, en claro o en oscuro, o un selector con `:root` que no sabe leer (pásale otra ruta de
+`ds.css` como argumento).
+
 ## Perfil de Claude de cada chat
 
 Cada chat y cada tarea con Claude dice en qué perfil corre: `ccp` (`CLAUDE_CONFIG_DIR=~/.claude`), `ccw`

@@ -12,7 +12,7 @@
 .fi-lk{color:var(--link);text-decoration:underline;text-underline-offset:2px}
 
 /* el panel */
-.fi-tabs .tab{display:inline-flex;align-items:center;gap:6px;padding:0 8px}
+.fi-tabs{flex-wrap:wrap}.fi-tabs .tab{display:inline-flex;align-items:center;gap:6px;padding:0 8px}
 .fi-msg{margin:0;padding:8px;color:var(--sub)}
 .fi-old{margin:0 8px 8px;padding:8px 12px;border-radius:8px;background:var(--raised);color:var(--amber);font-size:var(--sec);line-height:var(--secl)}
 .fi-prod{padding-bottom:12px}.fi-prod>.lab{margin:0;font-weight:400}.fi-prod>.lab b{font-weight:500;font-size:12px;letter-spacing:.04em;text-transform:uppercase}
