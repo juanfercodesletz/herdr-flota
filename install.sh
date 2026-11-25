@@ -1,11 +1,11 @@
 #!/bin/sh
-# Instala herdr-flota sobre Shepherdr: copia los mods de este repo en la app Herdr y genera
-# el layout `flota` = el de Shepherdr + nuestras piezas. Se corre otra vez después de cada
-# `shepherdr update`, porque el layout se regenera desde el suyo. No toca nada de Shepherdr.
+# Instala herdr-flota: copia los mods de este repo en la app Herdr y genera el layout `flota` =
+# el `main` de Herdr + nuestras piezas (Shepherdr 3.2 quitó su layout y sus mods de la ventana).
+# Se corre otra vez después de actualizar Herdr, porque el layout se regenera desde el suyo.
 set -e
 here=$(cd "$(dirname "$0")" && pwd -P)
 app="${HERDR_APP_HOME:-$HOME/.config/herdr-app}"
-[ -f "$app/layouts/shepherdr.json" ] || { echo "Falta Shepherdr: instálalo primero (github.com/eliasstravik/shepherdr)." >&2; exit 1; }
+[ -f "$app/layouts/main.json" ] || { echo "Falta la app Herdr: no está $app/layouts/main.json." >&2; exit 1; }
 
 for m in "$here"/mods/*/; do
   name=$(basename "$m")
@@ -18,7 +18,7 @@ done
 python3 - "$app" <<'EOF'
 import json, sys
 app = sys.argv[1]
-d = json.load(open(f"{app}/layouts/shepherdr.json"))
+d = json.load(open(f"{app}/layouts/main.json"))
 d.pop("preview", None)
 d["children"] = [c for c in d["children"] if c.get("id") != "entorno"]
 # Entorno: columna fija a la derecha, compartida por todos los espacios. min 44: su botón la pliega a una tira.
