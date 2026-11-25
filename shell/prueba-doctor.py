@@ -40,9 +40,10 @@ try:
     subprocess.run(f"git -C {REPO} archive main mods web | tar -x -C {src}", shell=True, check=True)
     for m in os.listdir(src + "/mods"):
         shutil.copytree(f"{src}/mods/{m}", f"{APP}/{m}")
-    for p, js in (("flota-entorno", "calc.js"), ("flota-iniciativas", "iniciativas.js")):
+    # Como install.sh. flota-tema no tiene mod y trae fuentes .woff2: binarios que el doctor no debe leer como texto.
+    for p, js in (("flota-entorno", "calc.js"), ("flota-iniciativas", "iniciativas.js"), ("flota-tema", "")):
         shutil.copytree(f"{src}/web/{p}", f"{PLUG}/{p}")
-        shutil.copy(f"{src}/mods/{p}/{js}", f"{PLUG}/{p}/")
+        js and shutil.copy(f"{src}/mods/{p}/{js}", f"{PLUG}/{p}/")
 
     # /flota: un servidor de verdad en un puerto libre, el que dice el plist.
     s = socket.socket(); s.bind(("127.0.0.1", 0)); puerto = s.getsockname()[1]; s.close()
@@ -122,11 +123,16 @@ try:
     malos = [c for c in chs if c["estado"] != "ok"]
     igual(f"sano: todo ok ({len(chs)} chequeos){'' if not malos else ' — ' + json.dumps(malos, ensure_ascii=False)}", not malos and len(chs) >= 12)
     igual("sano: sale 0", rc == 0)
+    igual("sano: el plugin con binarios (flota-tema) igual a main", ve(chs, "web", "ok", "flota-tema: igual a main") or
+          any(c["que"] == "plugin flota-tema: igual a main" for c in chs))
 
     # 1. Lo instalado no es main: un archivo cambiado, un plugin con un archivo de más y el Árbol, que ya no está.
     with open(f"{APP}/flota-entorno/main.js", "a") as f:
         f.write("// a mano\n")
     escribe(f"{PLUG}/flota-iniciativas/viejo.tsx", "")
+    fuente = next(f for f in sorted(os.listdir(f"{PLUG}/flota-tema/fuentes")) if f.endswith(".woff2"))
+    with open(f"{PLUG}/flota-tema/fuentes/{fuente}", "ab") as f:
+        f.write(b"\x83")
     escribe(f"{APP}/flota-arbol/main.js", "")
     escribe(f"{PLUG}/flota-arbol/client.tsx", "")
     # 2. El vigía apunta a un worktree y /flota no responde.
@@ -145,6 +151,7 @@ try:
     igual("roto: sale 1", rc == 1)
     igual("1. mod distinto de main", ve(chs, "mods", "falla", "flota-entorno: distinto de main (main.js)"))
     igual("1. plugin con un archivo de más", ve(chs, "web", "falla", "flota-iniciativas: distinto de main (viejo.tsx)"))
+    igual("1. plugin con un binario cambiado", ve(chs, "web", "falla", f"flota-tema: distinto de main (fuentes/{fuente})"))
     igual("1. mod que ya no está en main", ve(chs, "mods", "falla", "flota-arbol: instalado pero ya no está"))
     igual("1. plugin que ya no está en main", ve(chs, "web", "falla", "flota-arbol: instalado pero ya no está"))
     igual("2. servicio que apunta a un worktree", ve(chs, "servicios", "falla", "vigia: apunta a un worktree"))
