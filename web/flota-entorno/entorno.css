@@ -1,0 +1,29 @@
+/* Entorno y el chip de perfil en la web de Shepherdr 3.2: sobre sus colores y tamaños (web/src/ds.css). */
+.fe{display:grid;gap:16px;min-width:0}
+.fe p{margin:0;color:var(--muted);font-size:var(--sec);line-height:var(--secl)}
+.fe p.warn{color:var(--red);font-weight:600}.fe p.near,.fe p.old{color:var(--amber)}
+.fe p.old{padding:8px 12px;border-radius:8px;background:var(--raised)}
+.fe-hd{display:flex;align-items:center;gap:8px}.fe-hd h2{flex:1;margin:0;font-size:16px;line-height:24px;font-weight:600}.fe-hd .ib{margin:-4px -8px -4px 0}
+.fe-head{font-size:var(--h1);line-height:24px;font-weight:600}
+.fe-sec{display:grid;gap:12px}
+.fe-cap{display:flex;gap:8px;padding-right:68px;color:var(--muted);font-size:12px;line-height:16px;letter-spacing:.04em;text-transform:uppercase}
+.fe-cap span:first-child{flex:1}
+.fe-row{display:grid;gap:6px}
+.fe-l{display:flex;align-items:baseline;gap:8px}
+.fe-k{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fe-r{width:96px;flex:none;text-align:right;color:var(--muted);font-size:var(--sec);font-variant-numeric:tabular-nums}
+.fe-v{width:60px;flex:none;text-align:right;font-weight:500;font-variant-numeric:tabular-nums;color:var(--sub)}
+.fe-v.none{color:var(--muted)}.fe-v.near{color:var(--amber)}.fe-v.over{color:var(--red)}
+.fe-bar{position:relative;height:3px;border-radius:2px;background:var(--control2)}
+.fe-bar i{display:block;height:100%;border-radius:2px;background:var(--sub)}
+.fe-bar i.none{background:var(--muted)}.fe-bar i.near{background:var(--amber)}.fe-bar i.over{background:var(--red)}
+.fe-bar b{position:absolute;top:-2px;width:1px;height:7px;background:var(--fg);opacity:.5}
+/* el punto del botón, en la esquina de su ícono */
+.fe-dot{position:absolute;top:calc(50% - var(--ic)/2 - 3px);right:calc(50% - var(--ic)/2 - 4px);width:8px;height:8px;border-radius:50%;box-shadow:0 0 0 2px var(--canvas)}
+.fe-dot.near{background:var(--amber)}.fe-dot.over{background:var(--red)}
+/* el chip de perfil, en la cabecera de un chat o de una tarea */
+.fe-chip{display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 6px;border-radius:6px;background:var(--control);color:var(--sub);font-size:12px;line-height:16px;font-weight:600;white-space:nowrap;flex:none}
+.fe-chip:hover{background:var(--control2)}.fe-chip span{color:var(--muted);font-weight:400}
+.app.tap .fe-chip{height:28px;padding:0 8px;font-size:13px}
+.fe-mcp{display:grid;gap:4px}.fe-mcp div{overflow-wrap:anywhere}
+.fe .wrap{overflow-wrap:anywhere}

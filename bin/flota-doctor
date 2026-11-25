@@ -26,6 +26,9 @@ TAREAS = perfiles.TAREAS
 AGENTS = H + "/Library/LaunchAgents"
 SERVICIOS = ("web", "vigia", "reanudar")  # los que deja install.sh
 RAMA = os.environ.get("FLOTA_DOCTOR_RAMA", "main")
+GENERADOS = ("gpui-kit.d.ts", "jsconfig.json")  # la app Herdr los reescribe en cada mod instalado: no se comparan
+# Shepherdr 3.2 guarda sus espacios en el documento compartido de su sesión de herdr-core, no en la app Herdr.
+DOCS = (os.environ.get("XDG_STATE_HOME") or H + "/.local/state") + "/herdr-core/shepherdr/docs.json"
 res = []
 
 
@@ -51,12 +54,12 @@ INSTALAR = f"corre ./install.sh en {corto(REPO)} con {RAMA} al día"
 def arbol(prefijo):
     """{ruta relativa: sha} de main bajo prefijo/ (mods/x o web/x)."""
     out = git("ls-tree", "-r", RAMA, "--", prefijo + "/") or ""
-    return {l.split("\t", 1)[1][len(prefijo) + 1:]: l.split()[2] for l in out.splitlines()}
+    return {f: l.split()[2] for l in out.splitlines() if os.path.basename(f := l.split("\t", 1)[1][len(prefijo) + 1:]) not in GENERADOS}
 
 
 def instalado(d):
     """{ruta relativa: sha} de los archivos de una carpeta instalada."""
-    fs = sorted(os.path.relpath(f, d) for f in glob.glob(d + "/**", recursive=True) if os.path.isfile(f))
+    fs = sorted(os.path.relpath(f, d) for f in glob.glob(d + "/**", recursive=True) if os.path.isfile(f) and os.path.basename(f) not in GENERADOS)
     shas = (git("hash-object", "--stdin-paths", inp="".join(f"{d}/{f}\n" for f in fs)) or "").split()
     return dict(zip(fs, shas))
 
@@ -98,7 +101,7 @@ def instalacion():
     for d in sorted(glob.glob(f"{PLUGINS}/flota-*")):
         if os.path.basename(d) not in webs:
             r("web", "falla", f"plugin {os.path.basename(d)}: instalado pero ya no está en {RAMA}",
-              f"bórralo (rm -rf {corto(d)}) y reconstruye la web con shepherdr update --yes --keys keep")
+              f"bórralo (rm -rf {corto(d)}) y reconstruye la web con shepherdr update --yes, desde una terminal tuya")
 
 
 def servicios():
@@ -182,11 +185,18 @@ def perfil():
 
 
 def espacios_vivos():
-    """{id: carpeta} de los espacios de la app, o None si no responde."""
+    """{id: carpeta} de los espacios de Shepherdr (los que muestra su web) y de la app Herdr, o None si ninguno responde."""
+    vivos = None
     try:
-        return {s["id"]: s.get("folder") for s in json.loads(subprocess.run(["herdr-app", "ls"], capture_output=True, text=True, timeout=10).stdout)["spaces"]}
+        vivos = {s["id"]: s.get("folder") for s in json.load(open(DOCS))["herdr-app"]["value"]["spaces"] if isinstance(s, dict) and s.get("id")}
     except Exception:
-        return None
+        pass
+    try:
+        app = json.loads(subprocess.run(["herdr-app", "ls"], capture_output=True, text=True, timeout=10).stdout)["spaces"]
+        vivos = {**{s["id"]: s.get("folder") for s in app}, **(vivos or {})}
+    except Exception:
+        pass
+    return vivos
 
 
 def iniciativas(vivos):
@@ -252,7 +262,7 @@ if __name__ == "__main__":
     perfil()
     vivos = espacios_vivos()
     if vivos is None:
-        r("espacios", "aviso", "herdr-app ls no responde: no puedo ver los espacios", "abre la app Herdr")
+        r("espacios", "aviso", "ni Shepherdr ni herdr-app ls dan sus espacios: no puedo verlos", "abre la app Herdr")
     iniciativas(vivos)
     tareas(vivos)
     fallas = sum(x["estado"] == "falla" for x in res)

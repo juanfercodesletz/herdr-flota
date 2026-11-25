@@ -11,7 +11,8 @@ for m in "$here"/mods/*/; do
   name=$(basename "$m")
   # ponytail: copia, no symlink: Herdr no recarga mods enlazados. Correr de nuevo tras cada cambio.
   [ -L "$app/mods/$name" ] && rm "$app/mods/$name"
-  mkdir -p "$app/mods/$name" && rsync -a --delete "$m" "$app/mods/$name/"
+  # gpui-kit.d.ts y jsconfig.json los escribe la app Herdr en cada mod: se dejan los suyos.
+  mkdir -p "$app/mods/$name" && rsync -a --delete --exclude gpui-kit.d.ts --exclude jsconfig.json "$m" "$app/mods/$name/"
   echo "  mod     $name"
 done
 
@@ -80,7 +81,8 @@ EOF
 # Entorno en la web de Shepherdr: el plugin va a ~/.shepherdr/plugins (Shepherdr lo copia en cada build de su web),
 # con el mismo cálculo que el mod. Los datos son la foto que escribe el mod en ~/.herdr/flota/web/entorno.json;
 # un servidor local la sirve y Tailscale la publica en /flota del mismo tailnet (la app de Tailscale en macOS no
-# puede servir una carpeta). `shepherdr update` reconstruye la web solo si el plugin cambió.
+# puede servir una carpeta). `shepherdr update` reconstruye la web solo si el plugin cambió. El plugin se viste con
+# el sistema de diseño de la web (web/src/ds.css) y su propio .css: la web 3.2 no trae Tailwind.
 # Iniciativas igual, con iniciativas.js y la foto iniciativas.json. El mismo servidor (respuestas.py) recibe las
 # respuestas a las Decisiones que se tocan en la web (POST /flota/respuesta).
 for p in flota-entorno:calc.js flota-iniciativas:iniciativas.js; do
@@ -143,6 +145,13 @@ PLIST
   echo "  servicio dev.herdr-flota.reanudar (log en ~/.herdr/flota/reanudar.log)"
 fi
 command -v tailscale >/dev/null && tailscale serve --bg --set-path /flota http://127.0.0.1:7790 >/dev/null && echo "  tailnet /flota"
-command -v shepherdr >/dev/null && shepherdr update --yes --keys keep | grep -i "web app" || true
+# La web se reconstruye con `shepherdr update` (solo si un plugin cambió). Nunca desde un agente: la actualización
+# habla con la sesión de Shepherdr en herdr-core, y lo que arranque ahí hereda el entorno de quien la corre (AGENTS.md).
+if ! command -v shepherdr >/dev/null; then :
+elif env | grep -qE '^(CLAUDECODE|CLAUDE_CODE_|CLAUDE_CONFIG_DIR|CLAUDE_EFFORT|CODEX_)'; then
+  echo "  web     FALTA reconstruirla: corre \`shepherdr update --yes\` desde una terminal tuya (aquí corre un agente)"
+else
+  shepherdr update --yes | grep -i "web app" || true
+fi
 
-echo "Listo. En Herdr: Ctrl+Shift+L hasta el layout flota. En la web: Iniciativas arriba de los espacios y Entorno al pie."
+echo "Listo. En Herdr: Ctrl+Shift+L hasta el layout flota. En la web: Iniciativas en la cabecera del chat (en el teléfono, en la barra de abajo) y Entorno junto a la lupa de la lista."

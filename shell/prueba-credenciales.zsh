@@ -138,7 +138,7 @@ done
 
 print "— install.sh dos veces: un solo registro por perfil, los otros hooks intactos"
 app=$t/app; mkdir -p $app/layouts $t/bin
-print '{"children":[{"id":"work","children":[{"id":"tabs","size":{"px":30}}]},{"id":"panel-body","children":[]}]}' > $app/layouts/shepherdr.json
+print '{"children":[{"id":"work","children":[{"id":"tabs","size":{"px":30}}]},{"id":"panel-body","children":[]}]}' > $app/layouts/main.json
 for c in tailscale shepherdr; do print '#!/bin/sh\nexit 0' > $t/bin/$c; done
 print '#!/bin/sh\necho Linux' > $t/bin/uname   # sin el bloque de launchd: nada de servicios reales
 chmod +x $t/bin/*

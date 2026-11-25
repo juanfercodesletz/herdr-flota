@@ -6,18 +6,32 @@ ccw (~/.claude-work) o «a secas» (sin la variable: config global en ~/.claude.
 nombres, nunca su env ni sus cabeceras; de
 los conectores de claude.ai, la cuenta. Imprime un JSON; Entorno lo dibuja y lo deja en /flota/perfiles.json.
 """
-import json, os, re, subprocess, sys, time
+import json, os, re, socket, subprocess, sys, time
 
 H = os.path.expanduser("~")
 NOMBRES = {H + "/.claude": "ccp", H + "/.claude-work": "ccw"}
 TAREAS = os.environ.get("HERDR_TASK_STORE") or H + "/.herdr/tasks"
 
 
-def sh(*argv):
+def sh(*argv, env=None):
     try:
-        return subprocess.run(argv, capture_output=True, text=True, timeout=10).stdout
+        return subprocess.run(argv, capture_output=True, text=True, timeout=10, env=env).stdout
     except Exception:
         return ""
+
+
+def viva(sesion):
+    """¿Corre esa sesión de herdr-core? Preguntarle con hc a una apagada la arrancaría, con el entorno de quien pregunta."""
+    estado = os.environ.get("XDG_STATE_HOME") or H + "/.local/state"
+    s = socket.socket(socket.AF_UNIX)
+    s.settimeout(1)
+    try:
+        s.connect(f"{estado}/herdr-core/{sesion}/{sesion}.sock")
+        return True
+    except OSError:
+        return False
+    finally:
+        s.close()
 
 
 def read(path):
@@ -110,33 +124,40 @@ def tarea(label, cache={}):
 
 
 def terminales():
-    try:
-        ls = json.loads(sh("hc", "ls") or "{}").get("terminals") or []
-    except Exception:
-        return []
-    out = []
-    for t in ls:
-        if t.get("state") != "live":
+    """Los claude de la sesión de Shepherdr (3.2: ahí corren sus Assistants y tareas; primero, que son los que muestra
+    la web) y los de la default, la de la app Herdr. `sesion` los distingue: las direcciones (t1) se repiten."""
+    out, vistos = [], set()
+    for sesion in ("shepherdr", "default"):
+        if sesion != "default" and not viva(sesion):
             continue
+        env = {**os.environ, "HC_SESSION": sesion}
         try:
-            g = json.loads(sh("hc", "get", t["address"]))
+            ls = json.loads(sh("hc", "ls", env=env) or "{}").get("terminals") or []
         except Exception:
             continue
-        fg = g.get("foreground") or {}
-        # ponytail: solo el claude en primer plano del terminal; uno escondido bajo otro programa no se ve.
-        if os.path.basename((fg.get("argv") or [""])[0]) != "claude":
-            continue
-        lb = g.get("labels") or {}
-        d = config_dir(fg.get("pid"))
-        cwd = fg.get("cwd") or g.get("cwd") or ""
-        ref, titulo = tarea(lb.get("herdr.task"))
-        out.append({
-            "address": t["address"], "name": g.get("name"), "where": lb.get("where"),
-            "space": lb.get("herdr.space") or lb.get("herdr.task.space") or lb.get("herdr.coordinator.space"),
-            "assistant": lb.get("herdr.role") == "coordinator", "tarea": ref, "titulo": titulo, "cwd": cwd,
-            "perfil": perfil(d), "dir": d, "mcp": mcp(d, cwd) if d is not None else {},
-            "cuenta": cuenta(d) if d is not None else None,
-        })
+        for t in ls:
+            if t.get("state") != "live":
+                continue
+            try:
+                g = json.loads(sh("hc", "get", t["address"], env=env))
+            except Exception:
+                continue
+            fg = g.get("foreground") or {}
+            # ponytail: solo el claude en primer plano del terminal; uno escondido bajo otro programa no se ve.
+            if os.path.basename((fg.get("argv") or [""])[0]) != "claude" or fg.get("pid") in vistos:
+                continue
+            vistos.add(fg.get("pid"))
+            lb = g.get("labels") or {}
+            d = config_dir(fg.get("pid"))
+            cwd = fg.get("cwd") or g.get("cwd") or ""
+            ref, titulo = tarea(lb.get("herdr.task"))
+            out.append({
+                "address": t["address"], "sesion": sesion, "name": g.get("name"), "where": lb.get("where"),
+                "space": lb.get("herdr.space") or lb.get("herdr.task.space") or lb.get("herdr.coordinator.space"),
+                "assistant": lb.get("herdr.role") == "coordinator", "tarea": ref, "titulo": titulo, "cwd": cwd,
+                "perfil": perfil(d), "dir": d, "mcp": mcp(d, cwd) if d is not None else {},
+                "cuenta": cuenta(d) if d is not None else None,
+            })
     return out
 
 

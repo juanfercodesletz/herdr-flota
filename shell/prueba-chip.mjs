@@ -14,7 +14,7 @@ const tmp = mkdtempSync(`${tmpdir()}/prueba-chip-`);
 writeFileSync(`${tmp}/entrada.tsx`, `
 import { createRoot } from 'react-dom/client'
 import { MarcaEspacio, MarcaTarea } from '${aqui}web/flota-entorno/perfil.tsx'
-createRoot(document.getElementById('r')).render(<><MarcaEspacio place={{ id: 'sp1' }} /><MarcaTarea chatKey="HF-1/worker" /></>)
+createRoot(document.getElementById('r')).render(<><MarcaEspacio thread={{ place: 'sp1' }} /><MarcaTarea thread={{ task: { id: 'HF-1' } }} /></>)
 `);
 const build = await Bun.build({
   entrypoints: [`${tmp}/entrada.tsx`],
@@ -25,8 +25,9 @@ const build = await Bun.build({
     setup(b) {
       b.onResolve({ filter: /^(react|react-dom|scheduler)(\/|$)/ }, (a) => ({ path: Bun.resolveSync(a.path, nm) }));
       b.onResolve({ filter: /^\.\/calc\.js$/ }, () => ({ path: `${aqui}mods/flota-entorno/calc.js` })); // install.sh lo copia al lado
-      b.onResolve({ filter: /^@client\/kernel\.ts$/ }, () => ({ path: "kernel", namespace: "falso" }));
-      b.onLoad({ filter: /.*/, namespace: "falso" }, () => ({ contents: "export const useUI = (sel) => sel({ term: null })", loader: "js" }));
+      // De la web solo usa abrir un diálogo y su botón de cerrar: aquí no se abren.
+      b.onResolve({ filter: /^@client\// }, () => ({ path: "web", namespace: "falso" }));
+      b.onLoad({ filter: /.*/, namespace: "falso" }, () => ({ contents: "export const openDialog = () => {}, IB = () => null", loader: "js" }));
     },
   }],
 });

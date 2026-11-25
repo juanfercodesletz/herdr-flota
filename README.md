@@ -50,8 +50,8 @@ Cada paso se prueba en la app antes de seguir (`herdr-app check`, `herdr-app sho
 ## Instalar
 
 1. Instala Shepherdr (`./install.sh` en su repo) y corre `shepherdr doctor`.
-2. En este repo: `./install.sh`. Copia los mods y genera el layout `flota` desde el de Shepherdr.
-   Vuelve a correrlo después de cada `shepherdr update`.
+2. En este repo: `./install.sh`. Copia los mods y genera el layout `flota` desde el `main` de Herdr (Shepherdr 3.2
+   ya no dibuja nada en la ventana: es solo su web). Vuelve a correrlo después de actualizar Herdr.
 3. Para que Entorno vea el cupo de Claude Code, agrega esta línea a tu script de barra de estado,
    después de leer `rate_limits` (cambia `ccp` por el nombre del perfil):
 
@@ -71,11 +71,15 @@ Cada paso se prueba en la app antes de seguir (`herdr-app check`, `herdr-app sho
    punto, y el caso de hoy y los bordes de la escala).
 5. Entorno en la web de Shepherdr (el iPhone): `install.sh` deja el plugin en `~/.shepherdr/plugins/flota-entorno`
    (`web/flota-entorno` + el `calc.js` del mod), levanta el servicio launchd `dev.herdr-flota.web` (sirve
-   `~/.herdr/flota/web` en 127.0.0.1:7790), publica `/flota` con `tailscale serve` y corre `shepherdr update` para
-   reconstruir la web. Necesita que Shepherdr cargue plugins de `~/.shepherdr/plugins` (commit local 07859b09 en
-   la copia de Shepherdr, «Web: load the human's own plugins»). Los datos son la foto que escribe el panel del
-   escritorio cada 15 s: con Herdr cerrado o sin el layout `flota`, la web avisa que el dato es viejo.
-   En el teléfono: cajón de espacios → **Entorno**, al pie. Se quita con
+   `~/.herdr/flota/web` en 127.0.0.1:7790), publica `/flota` con `tailscale serve` y corre `shepherdr update --yes`
+   para reconstruir la web. Desde un agente ese último paso no corre (lo que la actualización arranque en la sesión
+   de Shepherdr heredaría el entorno del agente): `install.sh` lo dice y se corre a mano desde una terminal propia.
+   Necesita que Shepherdr cargue plugins de `~/.shepherdr/plugins` (commit local «Web: load the human's own
+   plugins» en la copia de Shepherdr). Los plugins se visten con el sistema de diseño de la web 3.2
+   (`web/src/ds.css`) y su propio `.css`; la web ya no trae Tailwind. Los datos son la foto que escribe el panel
+   del escritorio cada 15 s: con Herdr cerrado o sin el layout `flota`, la web avisa que el dato es viejo.
+   En la web: el botón del medidor en la fila de arriba de la lista de espacios (en el teléfono, la del cajón).
+   Se quita con
    `launchctl bootout gui/$(id -u)/dev.herdr-flota.web` y `tailscale serve --set-path /flota off`.
 6. El vigía del disco: `install.sh` levanta el servicio launchd `dev.herdr-flota.vigia`, que cada 10 min corre
    `bin/flota-vigia` (sin tokens). Si el disco pasa `start_disk − disco_margen` (3 por defecto, en
@@ -148,7 +152,7 @@ Ejemplo completo: `ejemplos/veta.json`.
 - `producto` y `titulo` son obligatorios; lo demás puede faltar. Títulos en lenguaje de producto.
 - `espacios`: los **ids** de los espacios de Shepherdr donde se ve el producto, nunca sus nombres (Juan los renombra).
   Cada uno, `"sp…"` o `{ "id": "sp…", "nombre": "…" }`; el nombre es solo para leerlo a ojo y no se compara. El id sale en
-  `herdr-app ls` (`spaces[].id`) o, desde un terminal del espacio, en `hc get $HC_TERMINAL_ID --json` (etiqueta
+  `~/.local/state/herdr-core/shepherdr/docs.json` (`herdr-app.value.spaces[].id`; los de la app Herdr, en `herdr-app ls`) o, desde un terminal del espacio, en `hc get $HC_TERMINAL_ID --json` (etiqueta
   `herdr.coordinator.space` en un Assistant, `herdr.space` en una pestaña, `herdr.task.space` en un agente de tarea). No cambia al renombrar el espacio ni al reiniciar la app o
   herdr-core (se guarda en el documento `herdr-app` del core); un espacio cerrado y vuelto a crear sí trae id nuevo.
   Lo pone el TPM. El panel muestra solo los productos del espacio abierto (en el teléfono, el del cajón) y cambia al
@@ -168,8 +172,8 @@ más urgente (a igualdad, atrasada y en riesgo antes que a tiempo; las todo merg
 o en PR primero. Cada épica dice cuántas tareas te esperan (bloqueadas o con PR abierto): «2 te esperan».
 
 En la app: botón **Iniciativas** al final de la barra de arriba; abre en el panel de la derecha, donde Tasks y
-Files. Clic en una épica → hoja inferior con sus tareas; clic en una tarea → ClickUp. En la web (el iPhone):
-fila **Iniciativas** arriba de los espacios del cajón. Un archivo que falta o está mal se dice en una línea.
+Files. Clic en una épica → hoja inferior con sus tareas; clic en una tarea → ClickUp. En la web: botón
+**Iniciativas** en la cabecera del chat (en el iPhone, en la barra de abajo); abre el panel de la derecha. Un archivo que falta o está mal se dice en una línea.
 Como Entorno, la web dibuja la foto que deja el panel del escritorio (`~/.herdr/flota/web/iniciativas.json`).
 Prueba del lector: `node shell/prueba-iniciativas.mjs`.
 
@@ -343,7 +347,7 @@ vacía, sin el comando original (medido en un core aislado, hc 0.1.18). Un `hc s
 nada: los programas siguen.
 
 - `bin/flota-reanudar` (servicio launchd `dev.herdr-flota.reanudar`, lo deja `install.sh`) sigue
-  `hc events`. Por cada terminal de tarea que hc recupera como shell vacía, si su tarea sigue en
+  `hc events` de la sesión `shepherdr` de herdr-core, donde Shepherdr 3.2 corre sus agentes. Por cada terminal de tarea que hc recupera como shell vacía, si su tarea sigue en
   `running` sin ningún agente que corra (`live` vacío en `herdr-task list`), hace
   `herdr-task resume <id> --folder <carpeta> --agent <su agente>` y cierra la shell vacía. Shepherdr
   guarda el argv y la sesión de cada agente en `~/.herdr/tasks/*.json`: vuelve con su conversación y en
