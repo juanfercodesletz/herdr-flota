@@ -8,6 +8,8 @@
 # No arranca el core: espera a que vuelva, porque el core les pasa su entorno a todos los terminales y el
 # de launchd es pelado. Lo deja corriendo install.sh, como servicio de launchd; escribe en stderr qué hizo.
 zmodload zsh/net/socket zsh/datetime zsh/system
+# Shepherdr 3.2: sus agentes viven en la sesión `shepherdr` de herdr-core, no en la default (la de la app).
+[[ -n $HC_SOCKET ]] || export HC_SESSION=${HC_SESSION:-shepherdr}
 sock=${HC_SOCKET:-${XDG_STATE_HOME:-$HOME/.local/state}/herdr-core/${HC_SESSION:-default}/${HC_SESSION:-default}.sock}
 vivo() { zsocket $sock 2>/dev/null && exec {REPLY}>&- }
 log() { print -u2 -- "$(strftime '%F %T' $EPOCHSECONDS) $*" }
